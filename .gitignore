@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Project outputs
+results/*
+!results/.gitkeep
+
+# Large raw data files (download per data/raw/README_DOWNLOAD.md)
+data/raw/*.csv
+data/raw/*.xlsx
+data/year_*.csv
+
+# Solver / editor noise
+*.log
+.vscode/
+.DS_Store
