@@ -20,11 +20,15 @@ perfect = perfect_forecaster
 
 
 def noisy_factory(pv_sigma=0.15, dem_sigma=0.10, seed=0):
-    """Forecaster that perturbs PV and demand by lognormal-ish multiplicative
-    noise. The current hour (index 0) is kept accurate (you know 'now'); error
-    grows mildly with how far ahead the hour is.
+    """Forecaster that perturbs PV and demand by multiplicative noise. The
+    current hour (index 0) stays accurate; error grows mildly with lead time.
+
+    seed:
+      - an int  -> reproducible noise (same sequence every run)
+      - None     -> genuinely random each run (the world is uncertain), so the
+                    realised MPC cost varies run to run like a real controller's
     """
-    rng = random.Random(seed)
+    rng = random.Random(seed)   # seed=None => system-seeded, varies each run
 
     def fc(data, k, h):
         w = _window(data, k, h)

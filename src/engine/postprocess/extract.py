@@ -1,4 +1,4 @@
-"""hexos.postprocess.extract — pull solved values into plain lists/dicts."""
+"""engine.postprocess.extract — pull solved values into plain lists/dicts."""
 import pyomo.environ as pyo
 
 

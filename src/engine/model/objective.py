@@ -1,5 +1,5 @@
 """
-hexos.model.objective
+engine.model.objective
 ======================
 Total operating cost over the horizon:
 

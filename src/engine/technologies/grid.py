@@ -1,4 +1,4 @@
-"""hexos.technologies.grid — grid connection capacity."""
+"""engine.technologies.grid — grid connection capacity."""
 import pyomo.environ as pyo
 
 

@@ -40,6 +40,10 @@ template use fictional, realistic values — no real plant data.
 - **Closed-loop MPC simulation** — an offline test of a real-time control
   strategy (forecast → optimise → apply one hour → simulate reality → re-forecast),
   measuring the realistic cost of imperfect forecasts vs perfect foresight
+- **Interactive Streamlit app** — pick a real day from the Munich year (by type:
+  sunny / cloudy / rainy / cold snap / hot, or by date), toggle technologies,
+  add forecast uncertainty, and solve it live. Variation comes from choosing
+  different REAL days, never from cosmetic randomness on the optimizer.
 
 ## Package layout
 
@@ -79,6 +83,7 @@ python scenarios/run_ev_day.py       # single-day EV smart-charging demo
 python scenarios/compare_cop.py      # COP fidelity comparison
 python scenarios/prepare_weather_year.py  # build a year from real Munich weather (.mos)
 python scenarios/run_mpc.py          # closed-loop MPC simulation vs perfect foresight
+streamlit run app/streamlit_app.py   # interactive demo (pick a real day, solve live)
 ```
 
 ## Methodology notes
@@ -108,4 +113,4 @@ PVGIS.
 
 ## License
 
-Add your chosen license (MIT is a common portfolio choice).
+Released under the MIT License (see `LICENSE`).

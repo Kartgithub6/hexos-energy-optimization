@@ -1,4 +1,4 @@
-"""hexos.technologies.pv — non-dispatchable solar, curtailable."""
+"""engine.technologies.pv — non-dispatchable solar, curtailable."""
 import pyomo.environ as pyo
 
 

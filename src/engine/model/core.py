@@ -1,5 +1,5 @@
 """
-hexos.model.core
+engine.model.core
 ================
 Declares model structure: sets (time, CHP units, EV chargers), parameters, and
 all decision variables, including the step-6/7 additions:

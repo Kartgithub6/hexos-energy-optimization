@@ -1,4 +1,4 @@
-"""hexos.technologies.curtail — heat curtailment (emergency cooler) lock.
+"""engine.technologies.curtail — heat curtailment (emergency cooler) lock.
 
 Heat dump is OFF unless cfg['allow_heat_dump'] is True, so by default heat must
 be exactly balanced.

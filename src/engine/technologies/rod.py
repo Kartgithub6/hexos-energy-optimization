@@ -1,4 +1,4 @@
-"""hexos.technologies.rod — resistive electricity -> heat."""
+"""engine.technologies.rod — resistive electricity -> heat."""
 import pyomo.environ as pyo
 
 

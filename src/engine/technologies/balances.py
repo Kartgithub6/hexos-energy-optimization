@@ -1,4 +1,4 @@
-"""hexos.technologies.balances — electricity and heat bus balances + peak tracking."""
+"""engine.technologies.balances — electricity and heat bus balances + peak tracking."""
 import pyomo.environ as pyo
 
 

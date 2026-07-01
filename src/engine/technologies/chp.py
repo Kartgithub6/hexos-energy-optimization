@@ -1,4 +1,4 @@
-"""hexos.technologies.chp — multiple CHP units: conversion, capacity, min-load,
+"""engine.technologies.chp — multiple CHP units: conversion, capacity, min-load,
 min-runtime, ramp limits, and start-up flags (for min-runtime and start-up cost).
 """
 import pyomo.environ as pyo
