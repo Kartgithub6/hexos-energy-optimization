@@ -1,4 +1,4 @@
-"""hexos.technologies.heat_storage — thermal storage on the heat bus."""
+"""engine.technologies.heat_storage — thermal storage on the heat bus."""
 import pyomo.environ as pyo
 
 

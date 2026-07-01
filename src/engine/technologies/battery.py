@@ -1,4 +1,4 @@
-"""hexos.technologies.battery — electrical storage."""
+"""engine.technologies.battery — electrical storage."""
 import pyomo.environ as pyo
 
 

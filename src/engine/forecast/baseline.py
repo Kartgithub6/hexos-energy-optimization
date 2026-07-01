@@ -1,5 +1,5 @@
 """
-hexos.forecast.baseline
+engine.forecast.baseline
 =======================
 Starter forecasting methods (the "prognosis" idea, built clean from standard
 techniques). These produce a forecast series the optimizer can use INSTEAD of

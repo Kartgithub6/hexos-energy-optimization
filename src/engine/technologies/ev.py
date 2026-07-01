@@ -1,4 +1,4 @@
-"""hexos.technologies.ev — EV charging as a controllable load.
+"""engine.technologies.ev — EV charging as a controllable load.
 
 Each EV session has a fixed energy need that must be delivered within a time
 window, and a max charging power. The model chooses WHEN to charge within the

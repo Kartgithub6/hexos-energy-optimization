@@ -1,4 +1,4 @@
-"""hexos.technologies.heatpump — electricity -> heat via COP (per-step)."""
+"""engine.technologies.heatpump — electricity -> heat via COP (per-step)."""
 import pyomo.environ as pyo
 
 

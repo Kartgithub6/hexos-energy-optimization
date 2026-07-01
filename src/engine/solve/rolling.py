@@ -1,5 +1,5 @@
 """
-hexos.solve.rolling
+engine.solve.rolling
 ===================
 Rolling-horizon solver: solve a long horizon in overlapping windows, carrying
 battery and heat-storage state across seams. Commits the first `commit_h` hours
@@ -11,7 +11,7 @@ Limitations (stated plainly):
     (on/off history is not carried forward).
   - EV charging is NOT supported here: EV sessions have absolute time windows
     that can straddle window seams, which needs window-aware energy accounting.
-    Use a single-horizon solve (hexos.model.build + hexos.solve.single) for EV
+    Use a single-horizon solve (engine.model.build + engine.solve.single) for EV
     scheduling. This solver raises if EVs are present, rather than silently
     producing a wrong schedule.
 """

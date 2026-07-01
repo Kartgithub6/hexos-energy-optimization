@@ -1,5 +1,5 @@
 """
-hexos.model.build
+engine.model.build
 =================
 Assemble the model from core + technologies + objective, enabling each
 technology by its config presence/capacity.

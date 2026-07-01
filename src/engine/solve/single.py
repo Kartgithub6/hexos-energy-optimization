@@ -1,4 +1,4 @@
-"""hexos.solve.single — solve a built model and extract results."""
+"""engine.solve.single — solve a built model and extract results."""
 import pyomo.environ as pyo
 
 
