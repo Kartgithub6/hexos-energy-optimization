@@ -33,9 +33,15 @@ def opsd_prices():
     df = pd.read_csv(OPSD, usecols=["cet_cest_timestamp", "DE_LU_price_day_ahead"])
     ts = pd.to_datetime(df["cet_cest_timestamp"], utc=True, errors="coerce").dt.tz_localize(None)
     df.index = ts
-    df = df[df.index.year == 2019]["DE_LU_price_day_ahead"].dropna()
-    return df.to_numpy(float)[:8760] / 1000.0 if len(df) >= 8760 else None
-
+    s = df[df.index.year == 2019]["DE_LU_price_day_ahead"].dropna()
+    if len(s) < 8000:          # sanity floor: clearly not a real year of data
+        return None
+    arr = s.to_numpy(float) / 1000.0        # EUR/MWh -> EUR/kWh
+    if len(arr) >= 8760:
+        return arr[:8760]
+    # pad the last couple of DST/gap hours by repeating the final value
+    import numpy as np
+    return np.concatenate([arr, np.full(8760 - len(arr), arr[-1])])
 
 def main():
     w = weather.read_mos(MOS)

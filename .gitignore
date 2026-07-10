@@ -17,3 +17,4 @@ data/year_*.csv
 *.log
 .vscode/
 .DS_Store
+.streamlit/secrets.toml

@@ -5,3 +5,5 @@ numpy>=1.24
 matplotlib>=3.7
 pytest>=7.0
 streamlit>=1.30
+plotly>=5.18
+psycopg2-binary>=2.9
