@@ -16,19 +16,35 @@ ramp limits, and start-up costs.
 
 ## What it does
 
-- Optimizes a full year (8,760 hours) at once, using a rolling-horizon solver
+- Optimizes a full year (8,757 hours) at once, using a rolling-horizon solver
   that keeps it tractable — the whole year solves in about two minutes.
+
 - Runs on real data: German day-ahead electricity prices (OPSD), Munich weather
   (EnergyPlus), and heat-demand and heat-pump efficiency profiles (When2Heat).
+
 - Includes a closed-loop Model Predictive Control simulation that tests how the
   system performs when it has to rely on imperfect forecasts, and measures the
   cost of that uncertainty against a perfect-foresight benchmark.
+
+- Quantifies the euro value of battery flexibility through a controlled
+  full-year experiment that toggles only the battery, holding everything else
+  fixed — isolating ~€5,500/yr (about 1.3% of annual operating cost) on the
+  2019 data.
+
+- Forecasts day-ahead prices probabilistically (P10/P50/P90) with a
+  walk-forward backtest, and calibrates the prediction intervals using conformal
+  prediction so the 80% band actually holds ~80% coverage (79.6% out-of-sample,
+  up from 59.4% raw).
+
 - Runs a study on how much the heat pump's efficiency modelling actually affects
   the results — a small but real modelling-fidelity question.
+
 - Comes with an interactive dashboard (Streamlit + Plotly) where you can pick a
   real day, switch technologies on and off, and solve it live. Results are saved
   to a PostgreSQL database so you can compare past runs.
-- Backed by a 52-test suite covering hand-checked cases and energy-balance checks.
+
+- Backed by a 52-test suite covering storage continuity, constraint
+  satisfaction, and energy-balance invariants.
 
 ## Getting started
 
