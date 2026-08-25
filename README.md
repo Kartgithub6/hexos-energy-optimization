@@ -23,13 +23,12 @@ ramp limits, and start-up costs.
   (EnergyPlus), and heat-demand and heat-pump efficiency profiles (When2Heat).
 
 - Includes a closed-loop Model Predictive Control simulation that tests how the
-  system performs when it has to rely on imperfect forecasts, and measures the
-  cost of that uncertainty against a perfect-foresight benchmark.
+  system performs when it has to rely on imperfect forecasts. With hourly re-planning,
+  that uncertainty costs under 0.1% against a perfect-foresight benchmark on the 2019 data.
 
 - Quantifies the euro value of battery flexibility through a controlled
   full-year experiment that toggles only the battery, holding everything else
-  fixed — isolating ~€5,500/yr (about 1.3% of annual operating cost) and lands within 0.5% of the perfect-foresight benchmark on the
-  2019 data.
+  fixed — isolating ~€5,500/yr (about 1.3% of annual operating cost).
 
 - Forecasts day-ahead prices probabilistically (P10/P50/P90) with a
   walk-forward backtest, and calibrates the prediction intervals using conformal
