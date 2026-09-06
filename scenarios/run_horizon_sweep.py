@@ -27,9 +27,29 @@ from engine.postprocess.extract import extract_results
 from engine.control.mpc import run_mpc, perfect_forecaster
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-#YEAR = os.path.join(ROOT, "data", "year_DE_2019.csv")
-YEAR = os.path.join(ROOT, "data", "year_DE_2024.csv")
-OUT_ROOT = os.path.join(ROOT, "results", "horizon_sweep")
+DATA_DIR = os.path.join(ROOT, "data")
+SWEEP_ROOT = os.path.join(ROOT, "results", "horizon_sweep")
+
+
+def resolve_dataset(arg):
+    """Accept a year ('2024'), a bare name ('year_DE_2024'), or a full path.
+
+    Returns (path, tag). The tag names the results folder, so runs on different
+    years sit side by side instead of overwriting each other -- which is the
+    whole point of being able to compare 2019 against 2024.
+    """
+    cands = [arg,
+             os.path.join(DATA_DIR, arg),
+             os.path.join(DATA_DIR, f"{arg}.csv"),
+             os.path.join(DATA_DIR, f"year_DE_{arg}.csv"),
+             os.path.join(DATA_DIR, f"year_{arg}.csv")]
+    for c in cands:
+        if os.path.isfile(c):
+            tag = os.path.splitext(os.path.basename(c))[0].replace("year_", "")
+            return c, tag
+    have = sorted(f for f in os.listdir(DATA_DIR) if f.startswith("year_"))
+    sys.exit(f"No dataset matching '{arg}'. Available in data/: {have}\n"
+             f"  Build one with: python scenarios/prepare_year_ec.py --year 2024")
 
 HORIZONS = [24, 48]
 
@@ -132,6 +152,10 @@ def single_shot(week, cfg, dt=1.0):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--data", default="2019",
+                    help="which year file to run: a year ('2024'), a name, or "
+                         "a path. Results are written under a folder named "
+                         "after it, so years do not overwrite each other.")
     ap.add_argument("--days", type=int, default=7)
     ap.add_argument("--commit", type=int, default=1,
                     help="MPC re-planning cadence [h]. 1 = re-plan hourly, "
@@ -142,8 +166,8 @@ def main():
                     help="comma-separated subset of " + ",".join(SEASONS))
     args = ap.parse_args()
 
-    if not os.path.exists(YEAR):
-        sys.exit("Run prepare_year.py or prepare_year_ec.py first.")
+    year_path, tag = resolve_dataset(args.data)
+    out_root = os.path.join(SWEEP_ROOT, tag)
 
     horizons = [int(x) for x in args.horizons.split(",")]
     seasons = [s.strip() for s in args.seasons.split(",")]
@@ -152,7 +176,7 @@ def main():
         sys.exit(f"Unknown season(s) {unknown}. Choose from {list(SEASONS)}.")
 
     hours = args.days * 24
-    data = load_timeseries(YEAR)
+    data = load_timeseries(year_path)
     n_year = len(data["T"])
     cfg = base_cfg()
 
@@ -162,6 +186,7 @@ def main():
                  f"({n_year} h). Reduce --days or edit SEASONS.")
 
     print(f"MPC horizon sensitivity across seasons\n"
+          f"  dataset {os.path.basename(year_path)}  ->  results/horizon_sweep/{tag}\n"
           f"  {args.days} d per week · commit {args.commit} h · perfect foresight\n"
           f"  horizons {horizons} · seasons {seasons}\n")
 
@@ -177,7 +202,7 @@ def main():
 
         t0 = time.time()
         ss = single_shot(week, cfg)
-        write_run(os.path.join(OUT_ROOT, season, "single_shot", "dispatch.csv"),
+        write_run(os.path.join(out_root, season, "single_shot", "dispatch.csv"),
                   week, ss)
         print(f"    single-shot        : {ss['cost']:9.2f} EUR  "
               f"[{time.time()-t0:.1f}s]")
@@ -190,7 +215,7 @@ def main():
             t0 = time.time()
             res = run_mpc(week, cfg, forecaster=perfect_forecaster,
                           horizon_h=h, commit_h=args.commit)
-            write_run(os.path.join(OUT_ROOT, season, f"h{h:02d}", "dispatch.csv"),
+            write_run(os.path.join(out_root, season, f"h{h:02d}", "dispatch.csv"),
                       week, res)
             cyc = (sum(res["charge"]) / cfg["battery"]["E_cap"]
                    if cfg["battery"]["E_cap"] else 0.0)
@@ -206,14 +231,14 @@ def main():
                             "solve_s": round(time.time() - t0, 1)})
         print()
 
-    os.makedirs(OUT_ROOT, exist_ok=True)
-    sp = os.path.join(OUT_ROOT, "summary.csv")
+    os.makedirs(out_root, exist_ok=True)
+    sp = os.path.join(out_root, "summary.csv")
     with open(sp, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(summary[0].keys()))
         w.writeheader()
         w.writerows(summary)
-    with open(os.path.join(OUT_ROOT, "meta.json"), "w") as f:
-        json.dump({"seasons": {s: SEASONS[s] for s in seasons},
+    with open(os.path.join(out_root, "meta.json"), "w") as f:
+        json.dump({"dataset": os.path.basename(year_path), "tag": tag, "seasons": {s: SEASONS[s] for s in seasons},
                    "hours": hours, "commit_h": args.commit,
                    "horizons": horizons, "forecast": "perfect"}, f, indent=2)
 
@@ -225,8 +250,8 @@ def main():
             print(f"  {h:3d} h horizon : gap {min(gaps):+.3f}% to {max(gaps):+.3f}%  "
                   f"(mean {sum(gaps)/len(gaps):+.3f}%)")
     print(f"\n  Wrote {sp}")
-    print(f"  Per-run dispatch CSVs under {OUT_ROOT}\\<season>\\<case>")
-    print("\n  Next: python scenarios/plot_horizon_sweep.py")
+    print(f"  Per-run dispatch CSVs under {out_root}\\<season>\\<case>")
+    print(f"\n  Next: python scenarios/plot_horizon_sweep.py --tag {tag}")
 
 
 if __name__ == "__main__":

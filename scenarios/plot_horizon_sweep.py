@@ -33,10 +33,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-SWEEP = os.path.join(ROOT, "results", "horizon_sweep")
-FIG1 = os.path.join(ROOT, "results", "horizon_sweep_dispatch.png")
-FIG2 = os.path.join(ROOT, "results", "horizon_sweep_soc.png")
-FIG3 = os.path.join(ROOT, "results", "horizon_sweep_summary.png")
+SWEEP_ROOT = os.path.join(ROOT, "results", "horizon_sweep")
+# Set per-run in main() once the dataset tag is known, so figures from
+# different years do not overwrite each other.
+SWEEP = SWEEP_ROOT
+FIG1 = FIG2 = FIG3 = None
 
 # --- Palette -------------------------------------------------------------
 # Indigo / slate / plum base with amber as the single warm accent. Chosen to
@@ -267,10 +268,29 @@ def figure_summary(seasons, horizons):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--tag", default=None,
+                    help="which dataset run to plot (e.g. DE_2024). Default: "
+                         "the only one present, or the newest.")
     ap.add_argument("--season", default="winter", help="season for figure 2")
     ap.add_argument("--compare", type=int, default=None,
                     help="horizon for figure 2 (default: the shortest run)")
     args = ap.parse_args()
+
+    global SWEEP, FIG1, FIG2, FIG3
+    tags = ([args.tag] if args.tag else
+            sorted((d for d in os.listdir(SWEEP_ROOT)
+                    if os.path.isfile(os.path.join(SWEEP_ROOT, d, "meta.json"))),
+                   key=lambda d: os.path.getmtime(
+                       os.path.join(SWEEP_ROOT, d, "meta.json")))
+            if os.path.isdir(SWEEP_ROOT) else [])
+    if not tags:
+        sys.exit("No sweep results found. Run run_horizon_sweep.py first.")
+    tag = tags[-1]
+    SWEEP = os.path.join(SWEEP_ROOT, tag)
+    FIG1 = os.path.join(ROOT, "results", f"horizon_{tag}_dispatch.png")
+    FIG2 = os.path.join(ROOT, "results", f"horizon_{tag}_soc.png")
+    FIG3 = os.path.join(ROOT, "results", f"horizon_{tag}_summary.png")
+    print(f"Plotting dataset: {tag}")
 
     meta = load_meta()
     seasons = [s for s in SEASON_ORDER if s in meta["seasons"]]
