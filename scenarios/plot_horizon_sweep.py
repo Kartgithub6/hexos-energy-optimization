@@ -1,7 +1,13 @@
 """
 plot_horizon_sweep.py
 =====================
-Three figres from run_horizon_sweep.py.
+Three figures from run_horizon_sweep.py.
+
+Optional flags for figure 1:
+  --seasons winter,summer   plot a subset of the seasons that were run, without
+                            re-solving and without touching summary.csv
+  --with-price              add an import-price strip under every panel, with
+                            the CHP break-even price drawn on it
 
 Figure 1 — season x horizon grid. Rows are seasons, columns are horizons, each
            panel showing the full electricity balance as a stacked area with
@@ -23,8 +29,10 @@ import _paths  # noqa
 
 import argparse
 import csv
+import datetime as dt
 import json
 import os
+import re
 import sys
 
 import matplotlib
@@ -58,6 +66,39 @@ C_ACCENT = "#E9C46A"    # highlight in summary figure
 
 ROD_ETA = 0.99          # matches base_cfg in run_horizon_sweep.py
 SEASON_ORDER = ["winter", "spring", "summer", "autumn"]
+
+# CHP economics, matching base_cfg in run_horizon_sweep.py. Used only to draw
+# the break-even line on the price strip.
+PRICE_GAS = 0.07        # EUR/kWh gas
+CHP_ETA_EL = 0.40
+CHP_HTP = 1.5           # kWh heat per kWh electricity
+
+
+def chp_breakeven(cop):
+    """Import price [EUR/kWh] above which CHP heat beats heat-pump heat.
+
+    Per kWh of CHP electricity the site pays PRICE_GAS / CHP_ETA_EL for gas and
+    gets back (a) that kWh, which it no longer imports, and (b) CHP_HTP kWh of
+    heat the heat pump no longer has to make, worth price * CHP_HTP / COP.
+    So CHP wins when price * (1 + CHP_HTP / COP) > PRICE_GAS / CHP_ETA_EL.
+
+    A screening line, not the optimiser's rule: it ignores storage, min load
+    and the fact that CHP heat must have somewhere to go.
+    """
+    return (PRICE_GAS / CHP_ETA_EL) / (1.0 + CHP_HTP / np.maximum(cop, 0.01))
+
+
+def week_start_date(tag, season, meta):
+    """Calendar date of hour 0 of a seasonal week, if the tag names a year.
+
+    Hour index counts from 1 January 00:00 UTC (see prepare_year_ec.py), so
+    the clock times on the axis are UTC.
+    """
+    m = re.search(r"(19|20)\d{2}", tag)
+    if not m or season not in meta.get("seasons", {}):
+        return None
+    year = int(m.group(0))
+    return dt.datetime(year, 1, 1) + dt.timedelta(hours=meta["seasons"][season])
 
 
 def load_run(season, case):
@@ -119,42 +160,107 @@ def panel(ax, d, label):
     return ax2
 
 
-def figure_grid(seasons, horizons):
-    """Rows = seasons, columns = horizons."""
+def price_strip(ax, d):
+    """Import price under a panel, with the CHP break-even price for context."""
+    t = d["t"]
+    px = d["price_el"] * 1000.0
+    be = chp_breakeven(d["cop"]) * 1000.0
+    ax.fill_between(t, px, color=C_PRICE, alpha=0.18, lw=0)
+    ax.plot(t, px, lw=1.1, color=C_PRICE, label="import price")
+    ax.plot(t, be, lw=1.0, ls="--", color=C_CHP, label="CHP break-even (vs heat pump)")
+    ax.set_ylabel("€/MWh", fontsize=8.5)
+    ax.tick_params(labelsize=7.5)
+    ax.margins(x=0)
+    ax.grid(axis="y", alpha=0.2)
+
+
+def day_axis(ax, start):
+    """Ticks every 24 h; named days when the calendar date is known."""
+    ticks = list(range(0, 169, 24))
+    ax.set_xticks(ticks)
+    if start is None:
+        ax.set_xticklabels([str(x) for x in ticks])
+        return
+    labels = [(start + dt.timedelta(hours=x)).strftime("%a %d %b") if x < 168
+              else "" for x in ticks]
+    ax.set_xticklabels(labels, fontsize=7.5, ha="left")
+
+
+def figure_grid(seasons, horizons, with_price=False, out=None, meta=None,
+                tag=""):
+    """Rows = seasons, columns = horizons. Optional price strip per panel."""
+    out = out or FIG1
+    meta = meta or {}
     nr, nc = len(seasons), len(horizons)
-    fig, axes = plt.subplots(nr, nc, figsize=(6.6 * nc, 2.7 * nr),
-                             squeeze=False)
-    legend_ax = None
+    if with_price:
+        fig = plt.figure(figsize=(6.8 * nc, 4.0 * nr + 0.6))
+        outer = fig.add_gridspec(nr, nc, hspace=0.24, wspace=0.22)
+    else:
+        fig, axes = plt.subplots(nr, nc, figsize=(6.6 * nc, 2.7 * nr),
+                                 squeeze=False)
+    legend_ax = price_legend_ax = None
     for i, season in enumerate(seasons):
+        start = week_start_date(tag, season, meta)
         for j, h in enumerate(horizons):
-            ax = axes[i][j]
+            if with_price:
+                inner = outer[i, j].subgridspec(2, 1, height_ratios=[3.2, 1.0],
+                                                hspace=0.07)
+                ax = fig.add_subplot(inner[0])
+                axp = fig.add_subplot(inner[1], sharex=ax)
+            else:
+                ax, axp = axes[i][j], None
             d = load_run(season, f"h{h:02d}")
             if d is None:
                 ax.axis("off")
+                if axp is not None:
+                    axp.axis("off")
                 continue
             panel(ax, d, f"{season} · {h} h")
+            for x in range(24, 168, 24):
+                ax.axvline(x, lw=0.5, color="#bbb", zorder=0)
             if legend_ax is None:
                 legend_ax = ax
             if j == 0:
                 ax.set_ylabel("kW", fontsize=9)
+            bottom = axp if axp is not None else ax
+            if axp is not None:
+                price_strip(axp, d)
+                plt.setp(ax.get_xticklabels(), visible=False)
+                if price_legend_ax is None:
+                    price_legend_ax = axp
+            day_axis(bottom, start)
             if i == nr - 1:
-                ax.set_xlabel("hour of week", fontsize=9.5)
+                bottom.set_xlabel("" if start else "hour of week",
+                                  fontsize=9.5)
 
+    hd, hl = ([], [])
     if legend_ax is not None:
         hd, hl = legend_ax.get_legend_handles_labels()
-        fig.legend(hd, hl, loc="upper center", ncol=5, frameon=False,
-                   fontsize=9.5, bbox_to_anchor=(0.5, 0.975))
-    fig.suptitle("HEXOS — MPC horizon across the seasons  ·  perfect foresight, "
+    if price_legend_ax is not None:
+        h2, l2 = price_legend_ax.get_legend_handles_labels()
+        hd, hl = hd + h2, hl + l2
+    if hd:
+        fig.legend(hd, hl, loc="upper center", ncol=6 if with_price else 5,
+                   frameon=False, fontsize=9.5, bbox_to_anchor=(0.5, 0.975))
+    title_seasons = " vs ".join(seasons) if nr < len(SEASON_ORDER) else \
+        "across the seasons"
+    fig.suptitle(f"HEXOS — MPC horizon, {title_seasons}  ·  perfect foresight, "
                  "horizon is the only variable within a week",
                  fontsize=13.5, fontweight="bold", y=0.997)
-    fig.text(0.5, 0.006,
-             "Dark line on each right axis is battery energy content [kWh]. "
-             "Read down a column for seasonal robustness, across a row for what "
-             "the extra day of foresight bought.",
-             ha="center", fontsize=8.6, color="#777")
-    fig.tight_layout(rect=[0, 0.016, 1, 0.955])
-    fig.savefig(FIG1, dpi=170, facecolor="white")
-    print(f"Wrote {FIG1}")
+    foot = ("Dark line on each right axis is battery energy content [kWh]. "
+            "Read down a column for seasonal robustness, across a row for what "
+            "the extra day of foresight bought.")
+    if with_price:
+        foot += ("\nPrice strip: import price paid by the site. Dashed line: "
+                 "price above which CHP heat beats heat-pump heat (screening "
+                 "line, ignores storage). Days are UTC.")
+    fig.text(0.5, 0.006, foot, ha="center", fontsize=8.4, color="#777")
+    if with_price:
+        fig.subplots_adjust(left=0.06, right=0.95, top=0.885, bottom=0.10)
+    else:
+        fig.tight_layout(rect=[0, 0.016, 1, 0.955])
+    fig.savefig(out, dpi=170, facecolor="white")
+    print(f"Wrote {out}")
 
 
 def figure_soc(season, horizon):
@@ -274,6 +380,13 @@ def main():
     ap.add_argument("--season", default="winter", help="season for figure 2")
     ap.add_argument("--compare", type=int, default=None,
                     help="horizon for figure 2 (default: the shortest run)")
+    ap.add_argument("--seasons", default=None,
+                    help="comma-separated subset for figure 1, e.g. "
+                         "winter,summer. Re-plots existing results; nothing "
+                         "is re-solved and summary.csv is untouched.")
+    ap.add_argument("--with-price", action="store_true",
+                    help="add an import-price strip under each panel of "
+                         "figure 1")
     args = ap.parse_args()
 
     global SWEEP, FIG1, FIG2, FIG3
@@ -298,7 +411,24 @@ def main():
     horizons = meta["horizons"]
     compare = args.compare if args.compare is not None else min(horizons)
 
-    figure_grid(seasons, horizons)
+    grid_seasons = seasons
+    if args.seasons:
+        want = [x.strip() for x in args.seasons.split(",") if x.strip()]
+        missing = [x for x in want if x not in seasons]
+        if missing:
+            sys.exit(f"Season(s) {missing} not in this run. Have: {seasons}")
+        grid_seasons = [x for x in seasons if x in want]
+    out1 = FIG1
+    if grid_seasons != seasons or args.with_price:
+        suffix = "_" + "_".join(grid_seasons) if grid_seasons != seasons else ""
+        suffix += "_price" if args.with_price else ""
+        out1 = FIG1.replace(".png", f"{suffix}.png")
+    figure_grid(grid_seasons, horizons, with_price=args.with_price, out=out1,
+                meta=meta, tag=tag)
+    if args.seasons:
+        # A subset request is about figure 1 only. Leave the summary and SOC
+        # figures, which describe the full sweep, as they are.
+        return
     figure_summary(seasons, horizons)
     season = args.season if args.season in seasons else seasons[0]
     figure_soc(season, compare)
