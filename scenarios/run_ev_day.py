@@ -5,7 +5,7 @@ absolute and not suited to the rolling solver).
 """
 import _paths  # noqa
 from engine import make_data, build_model, solve, extract_results
-import ref_plant
+import demo_plant
 
 
 def main():
@@ -17,8 +17,8 @@ def main():
     dem_heat = [120 + 80 * (h < 8) for h in T]
     data = make_data(T, price, [0.05] * 24, pv, dem_el, dem_heat, cop=3.2)
 
-    cfg = ref_plant.ref_plant_cfg()
-    cfg["evs"] = ref_plant.ev_fleet_day()
+    cfg = demo_plant.demo_plant_cfg()
+    cfg["evs"] = demo_plant.ev_fleet_day()
     # Single-horizon solve (not rolling) so EV windows are handled directly.
     m = build_model(data, cfg); solve(m); r = extract_results(m)
 

@@ -25,7 +25,7 @@ import pandas as pd
 
 from engine import make_data, build_model, solve, extract_results
 from engine.data import daytypes
-import ref_plant
+import demo_plant
 import db
 
 MOS = os.path.join(ROOT, "data", "weather", "DEU_Munich_108660_IWEC.mos")
@@ -70,11 +70,10 @@ base_price = st.sidebar.slider("Average import price [EUR/kWh]", 0.10, 0.40, 0.2
 peak_ratio = st.sidebar.slider("Evening peak multiplier", 1.0, 3.0, 1.8, 0.1)
 
 st.sidebar.header("Technologies")
-use_chp = st.sidebar.checkbox("CHP units (3)", True)
+use_chp = st.sidebar.checkbox("CHP", True)
 use_hp = st.sidebar.checkbox("Heat pump", True)
 use_battery = st.sidebar.checkbox("Battery", True)
-use_wood = st.sidebar.checkbox("Woodchip boiler", True)
-use_gas = st.sidebar.checkbox("Gas boiler", False)
+use_rod = st.sidebar.checkbox("Heating rod", True)
 
 st.sidebar.header("Saved scenarios")
 if conn is None:
@@ -92,27 +91,25 @@ else:
     if st.sidebar.button("Save scenario") and new_name:
         db.save_scenario(conn, new_name, "daytype" if mode == "Day type" else "date",
                          dtype if mode == "Day type" else f"{month:02d}-{dom:02d}",
-                         base_price, peak_ratio, use_chp, use_hp, use_battery, use_wood, use_gas)
+                         base_price, peak_ratio, use_chp, use_hp, use_battery, False, False)             
         st.sidebar.success(f"Saved '{new_name}'")
 
 run = st.sidebar.button("Solve day", type="primary")
 
 
 def build_cfg():
-    cfg = ref_plant.ref_plant_cfg()
+    cfg = demo_plant.demo_plant_cfg()
     if not use_chp:
-        cfg.pop("chps", None)
-    cfg["heatpump"] = {"q_max": 400.0} if use_hp else {"q_max": 0.0}
+        cfg.pop("chp", None)
+    if not use_hp:
+        cfg["heatpump"]["q_max"] = 0.0
     if not use_battery:
         cfg["battery"]["E_cap"] = 0
-    if not use_wood:
-        cfg["woodchip"]["q_max"] = 0
-    if not use_gas:
-        cfg["gas_boiler"]["q_max"] = 0
+    if not use_rod:
+        cfg["rod"]["q_max"] = 0.0
     cfg["battery"]["soc_init"] = 0.0
     cfg["heat_storage"]["soc_init"] = 0.0
     return cfg
-
 
 def price_series(n):
     return [base_price * (peak_ratio if 17 <= h <= 20 else (0.6 if h < 6 else 1.0)) for h in range(n)]
@@ -134,8 +131,6 @@ def heat_chart(hours, r, dem_heat):
     fig = go.Figure()
     fig.add_bar(x=hours, y=r["chp_heat"], name="CHP heat", marker_color=COLORS["chp_heat"])
     fig.add_bar(x=hours, y=r["hp_heat"], name="Heat pump", marker_color=COLORS["hp_heat"])
-    fig.add_bar(x=hours, y=r["wood_heat"], name="Woodchip boiler", marker_color=COLORS["wood_heat"])
-    fig.add_bar(x=hours, y=r["gas_heat"], name="Gas boiler", marker_color=COLORS["gas_heat"])
     fig.add_bar(x=hours, y=r["rod_heat"], name="Heating rod", marker_color=COLORS["rod_heat"])
     fig.add_trace(go.Scatter(x=hours, y=dem_heat, name="Heat demand", mode="lines+markers",
                              line=dict(color="white", width=2, dash="dot")))
@@ -162,8 +157,9 @@ with tab_dispatch:
             solve(m)
             r = extract_results(m)
 
-        techs = ",".join(t for t, on in [("CHP", use_chp), ("HP", use_hp), ("Battery", use_battery),
-                                         ("Wood", use_wood), ("Gas", use_gas)] if on)
+        techs = ",".join(t for t, on in [("CHP", use_chp), ("HP", use_hp),
+                                         ("Battery", use_battery), ("Rod", use_rod)] if on)
+
         if conn is not None:
             db.log_run(conn, None, chosen_label, r["cost"], max(0.0, max(r["import"])),
                       sum(r["pv_used"]), sum(r["h_curtail"]), techs)

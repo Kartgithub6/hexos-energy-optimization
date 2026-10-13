@@ -18,6 +18,7 @@ data/year_*.csv
 .vscode/
 .DS_Store
 .streamlit/secrets.toml
+~$*
 
 # Personal notes kept out of the public repo
 HEXOS_MARKET_CONCEPTS.md
