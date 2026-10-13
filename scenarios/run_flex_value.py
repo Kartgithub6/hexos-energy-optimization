@@ -64,7 +64,7 @@ def _solve(data, battery_cap, label):
     return r["cost"]
 
 
-def main():
+def main():  gggg
     if not os.path.exists(YEAR):
         sys.exit("Run prepare_year.py first (need data/year_DE_2019.csv).")
     data = load_timeseries(YEAR)

@@ -8,6 +8,10 @@ Optional flags for figure 1:
                             re-solving and without touching summary.csv
   --with-price              add an import-price strip under every panel, with
                             the CHP break-even price drawn on it
+  --per-horizon             write ONE figure per horizon instead of a single
+                            grid. With --seasons winter,summer --per-horizon
+                            you get two files: one 24 h winter/summer figure
+                            and one 48 h winter/summer figure.
 
 Figure 1 — season x horizon grid. Rows are seasons, columns are horizons, each
            panel showing the full electricity balance as a stacked area with
@@ -193,10 +197,12 @@ def figure_grid(seasons, horizons, with_price=False, out=None, meta=None,
     meta = meta or {}
     nr, nc = len(seasons), len(horizons)
     if with_price:
-        fig = plt.figure(figsize=(6.8 * nc, 4.0 * nr + 0.6))
-        outer = fig.add_gridspec(nr, nc, hspace=0.24, wspace=0.22)
+        fig = plt.figure(figsize=(max(6.8, 7.2 * nc), 4.0 * nr + 0.6))
+        outer = fig.add_gridspec(nr, nc, hspace=0.24,
+                                 wspace=0.22 if nc > 1 else 0.0)
     else:
-        fig, axes = plt.subplots(nr, nc, figsize=(6.6 * nc, 2.7 * nr),
+        fig, axes = plt.subplots(nr, nc,
+                                 figsize=(max(6.6, 7.2 * nc), 2.9 * nr),
                                  squeeze=False)
     legend_ax = price_legend_ax = None
     for i, season in enumerate(seasons):
@@ -240,25 +246,53 @@ def figure_grid(seasons, horizons, with_price=False, out=None, meta=None,
         h2, l2 = price_legend_ax.get_legend_handles_labels()
         hd, hl = hd + h2, hl + l2
     if hd:
-        fig.legend(hd, hl, loc="upper center", ncol=6 if with_price else 5,
-                   frameon=False, fontsize=9.5, bbox_to_anchor=(0.5, 0.975))
+        if nc == 1:
+            ncol = 3 if with_price else 3
+            top_pad = 0.86 if with_price else 0.82
+            legend_y = 0.985
+        else:
+            ncol = 6 if with_price else 5
+            top_pad = None
+            legend_y = 0.975
+        fig.legend(hd, hl, loc="upper center", ncol=ncol, frameon=False,
+                   fontsize=9.5, bbox_to_anchor=(0.5, legend_y))
     title_seasons = " vs ".join(seasons) if nr < len(SEASON_ORDER) else \
         "across the seasons"
-    fig.suptitle(f"HEXOS — MPC horizon, {title_seasons}  ·  perfect foresight, "
-                 "horizon is the only variable within a week",
-                 fontsize=13.5, fontweight="bold", y=0.997)
-    foot = ("Dark line on each right axis is battery energy content [kWh]. "
-            "Read down a column for seasonal robustness, across a row for what "
-            "the extra day of foresight bought.")
-    if with_price:
-        foot += ("\nPrice strip: import price paid by the site. Dashed line: "
-                 "price above which CHP heat beats heat-pump heat (screening "
-                 "line, ignores storage). Days are UTC.")
-    fig.text(0.5, 0.006, foot, ha="center", fontsize=8.4, color="#777")
-    if with_price:
-        fig.subplots_adjust(left=0.06, right=0.95, top=0.885, bottom=0.10)
+    if nc == 1:
+        title = (f"HEXOS — {horizons[0]} h MPC horizon, {title_seasons}  ·  "
+                 f"perfect foresight")
     else:
-        fig.tight_layout(rect=[0, 0.016, 1, 0.955])
+        title = (f"HEXOS — MPC horizon, {title_seasons}  ·  "
+                 "perfect foresight, horizon is the only variable within a week")
+    fig.suptitle(title, fontsize=13.5 if nc > 1 else 12.5,
+                 fontweight="bold", y=0.997)
+    if nc == 1:
+        foot = ("Right axis: battery energy content [kWh]. Compare with "
+                "the other horizon's figure for what\nthe extra day bought.")
+        if with_price:
+            foot += ("  Dashed line in the price strip: CHP break-even "
+                     "(screening only). Days UTC.")
+    else:
+        foot = ("Dark line on each right axis is battery energy content [kWh]. "
+                "Read down a column for seasonal robustness, across a row for "
+                "what the extra day of foresight bought.")
+        if with_price:
+            foot += ("\nPrice strip: import price paid by the site. Dashed "
+                     "line: price above which CHP heat beats heat-pump heat "
+                     "(screening line, ignores storage). Days are UTC.")
+    fig.text(0.5, 0.012 if nc > 1 else 0.013, foot, ha="center",
+             fontsize=8.4 if nc > 1 else 7.8, color="#777")
+    if with_price:
+        if nc == 1:
+            fig.subplots_adjust(left=0.11, right=0.90, top=top_pad,
+                                bottom=0.11)
+        else:
+            fig.subplots_adjust(left=0.06, right=0.95, top=0.885, bottom=0.10)
+    else:
+        if nc == 1:
+            fig.tight_layout(rect=[0.02, 0.03, 0.98, top_pad or 0.92])
+        else:
+            fig.tight_layout(rect=[0, 0.016, 1, 0.955])
     fig.savefig(out, dpi=170, facecolor="white")
     print(f"Wrote {out}")
 
@@ -387,6 +421,10 @@ def main():
     ap.add_argument("--with-price", action="store_true",
                     help="add an import-price strip under each panel of "
                          "figure 1")
+    ap.add_argument("--per-horizon", action="store_true",
+                    help="write ONE dispatch figure per horizon instead of a "
+                         "single grid. The summary and SOC figures (which "
+                         "describe the full sweep) are still written once.")
     args = ap.parse_args()
 
     global SWEEP, FIG1, FIG2, FIG3
@@ -418,14 +456,26 @@ def main():
         if missing:
             sys.exit(f"Season(s) {missing} not in this run. Have: {seasons}")
         grid_seasons = [x for x in seasons if x in want]
-    out1 = FIG1
-    if grid_seasons != seasons or args.with_price:
-        suffix = "_" + "_".join(grid_seasons) if grid_seasons != seasons else ""
-        suffix += "_price" if args.with_price else ""
-        out1 = FIG1.replace(".png", f"{suffix}.png")
-    figure_grid(grid_seasons, horizons, with_price=args.with_price, out=out1,
-                meta=meta, tag=tag)
-    if args.seasons:
+
+    def figure_name(hs, hz):
+        """Where this figure lands. One PNG per horizon when --per-horizon,
+        otherwise the single-grid name used by the earlier scripts."""
+        suffix = "_" + "_".join(hs) if hs != seasons else ""
+        if len(hz) == 1:
+            suffix += f"_h{hz[0]:02d}"
+        if args.with_price:
+            suffix += "_price"
+        return FIG1 if suffix == "" else FIG1.replace(".png", f"{suffix}.png")
+
+    if args.per_horizon:
+        for h in horizons:
+            figure_grid(grid_seasons, [h], with_price=args.with_price,
+                        out=figure_name(grid_seasons, [h]), meta=meta, tag=tag)
+    else:
+        figure_grid(grid_seasons, horizons, with_price=args.with_price,
+                    out=figure_name(grid_seasons, horizons), meta=meta, tag=tag)
+
+    if args.seasons or args.per_horizon:
         # A subset request is about figure 1 only. Leave the summary and SOC
         # figures, which describe the full sweep, as they are.
         return
