@@ -178,6 +178,10 @@ def main():
                          "Munich TMY irradiance and HAS seasonality. "
                          "'synthetic' reproduces prepare_year.py's daily sine, "
                          "which does not.")
+    ap.add_argument("--suffix", default="",
+                    help="appended to the output name, e.g. 'retail' writes "
+                         "year_DE_2024_retail.csv, so two tariff variants of "
+                         "the same year can sit side by side")
     ap.add_argument("--export-mode", choices=["retail", "spot"], default="retail",
                     help="'retail': import = wholesale + full markup, export = "
                          "wholesale (a supplied-site tariff; export is almost "
@@ -286,7 +290,10 @@ def main():
         "cop": merged[COP_COL].to_numpy(float),
     })
 
-    op = os.path.join(OUT_DIR, f"year_{COUNTRY}_{args.year}.csv")
+    name = f"year_{COUNTRY}_{args.year}"
+    if args.suffix:
+        name += f"_{args.suffix}"
+    op = os.path.join(OUT_DIR, f"{name}.csv")
     header = (
         f"# HEXOS year {COUNTRY} {args.year} ({args.bzn})\n"
         f"# prices : Fraunhofer ISE Energy-Charts day-ahead, {args.year}, "

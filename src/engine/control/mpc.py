@@ -40,6 +40,7 @@ from engine.model.build import build_model
 from engine.solve.single import solve
 from engine.postprocess.extract import extract_results
 from engine.control.simulator import advance_one_hour
+from engine.solve import state as carry
 
 
 def _window(data, k, h):
@@ -63,8 +64,7 @@ def run_mpc(data, cfg, forecaster=perfect_forecaster, horizon_h=24, commit_h=1,
     and re-optimisation (see module docstring). Must be <= horizon_h.
     """
     n = len(data["T"])
-    state = {"batt_soc": cfg.get("battery", {}).get("soc_init", 0.0),
-             "hstor_soc": cfg.get("heat_storage", {}).get("soc_init", 0.0)}
+    state = carry.initial_state(cfg)
     applied_keys = ["import", "export", "pv_used", "charge", "discharge",
                     "chp_el", "chp_heat", "hp_heat", "rod_heat",
                     "h_charge", "h_discharge", "wood_heat", "gas_heat"]
@@ -80,9 +80,7 @@ def run_mpc(data, cfg, forecaster=perfect_forecaster, horizon_h=24, commit_h=1,
         commit = min(commit_h, h)
         fc = forecaster(data, k, h)
 
-        wcfg = copy.deepcopy(cfg)
-        if "battery" in wcfg: wcfg["battery"]["soc_init"] = state["batt_soc"]
-        if "heat_storage" in wcfg: wcfg["heat_storage"]["soc_init"] = state["hstor_soc"]
+        wcfg = carry.window_cfg(copy.deepcopy(cfg), state, k, k + h, n)
         m = build_model(fc, wcfg, dt, cyclic=False)
         solve(m)
         r = extract_results(m)
@@ -101,11 +99,18 @@ def run_mpc(data, cfg, forecaster=perfect_forecaster, horizon_h=24, commit_h=1,
                 + gasb_price * r["gas_fuel"][i]
             ) * dt
             state = advance_one_hour(state, applied, cfg, dt)
+        state = carry.advance(state, r, cfg, commit)
 
         k += commit
         if verbose and k % 1000 == 0:
             print(f"  ...MPC hour {k}/{n}")
 
-    out["cost"] = realised_cost
+    demand_cost = cfg.get("demand_charge", 0.0) * state["peak"]
+    out["energy_cost"] = realised_cost
+    out["startup_cost"] = state["startup_cost"]
+    out["demand_cost"] = demand_cost
+    out["cost"] = realised_cost + state["startup_cost"] + demand_cost
+    out["chp_starts"] = state["starts"]
+    out["peak_import"] = state["peak"]
     out["t"] = list(range(n))
     return out

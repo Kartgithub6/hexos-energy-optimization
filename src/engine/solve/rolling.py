@@ -7,8 +7,10 @@ of each `window_h`-hour window.
 
 Limitations (stated plainly):
   - Approximates the true full-horizon optimum (no window sees the whole year).
-  - Min-runtime / start-up flags are enforced WITHIN a window, not across seams
-    (on/off history is not carried forward).
+  - CHP on/off state, the last 23 h of start-ups and the running peak import
+    ARE carried across seams (engine.solve.state). Minimum runtime is still only
+    enforced within a window: a unit started near a seam is not held on into
+    the next window.
   - EV charging is NOT supported here: EV sessions have absolute time windows
     that can straddle window seams, which needs window-aware energy accounting.
     Use a single-horizon solve (engine.model.build + engine.solve.single) for EV
@@ -20,6 +22,7 @@ import copy
 from engine.model.build import build_model
 from engine.solve.single import solve
 from engine.postprocess.extract import extract_results
+from engine.solve import state as carry
 
 _SERIES_KEYS = [
     "import", "export", "pv_used", "charge", "discharge", "soc",
@@ -51,8 +54,7 @@ def solve_rolling(data, cfg, window_h=48, commit_h=24, dt_hours=1.0, verbose=Tru
     n = len(data["T"])
     out = {k: [] for k in _SERIES_KEYS}
     total_cost = 0.0
-    batt_soc = cfg.get("battery", {}).get("soc_init", 0.0)
-    hstor_soc = cfg.get("heat_storage", {}).get("soc_init", 0.0)
+    st = carry.initial_state(cfg)
     wood_price = cfg.get("woodchip", {}).get("fuel_price", 0.0)
     gasb_price = cfg.get("gas_boiler", {}).get("fuel_price", 0.0)
 
@@ -61,11 +63,7 @@ def solve_rolling(data, cfg, window_h=48, commit_h=24, dt_hours=1.0, verbose=Tru
         end = min(start + window_h, n)
         commit = min(commit_h, end - start)
         wdata = _slice(data, start, end)
-        wcfg = copy.deepcopy(cfg)
-        if "battery" in wcfg:
-            wcfg["battery"]["soc_init"] = batt_soc
-        if "heat_storage" in wcfg:
-            wcfg["heat_storage"]["soc_init"] = hstor_soc
+        wcfg = carry.window_cfg(copy.deepcopy(cfg), st, start, end, n)
 
         m = build_model(wdata, wcfg, dt_hours, cyclic=False)
         solve(m)
@@ -82,14 +80,21 @@ def solve_rolling(data, cfg, window_h=48, commit_h=24, dt_hours=1.0, verbose=Tru
                 + gasb_price * r["gas_fuel"][i]
             ) * dt_hours
 
-        batt_soc = r["soc"][commit - 1]
-        hstor_soc = r["h_soc"][commit - 1]
+        st = carry.advance(st, r, cfg, commit)
+        st["batt_soc"] = r["soc"][commit - 1]
+        st["hstor_soc"] = r["h_soc"][commit - 1]
         start += commit
         n_windows += 1
         if verbose and n_windows % 50 == 0:
             print(f"  ...solved {n_windows} windows, through hour {start}")
 
-    out["cost"] = total_cost
+    demand_cost = cfg.get("demand_charge", 0.0) * st["peak"]
+    out["energy_cost"] = total_cost
+    out["startup_cost"] = st["startup_cost"]
+    out["demand_cost"] = demand_cost
+    out["cost"] = total_cost + st["startup_cost"] + demand_cost
+    out["chp_starts"] = st["starts"]
+    out["peak_import"] = st["peak"]
     out["t"] = list(range(n))
     out["n_windows"] = n_windows
     return out

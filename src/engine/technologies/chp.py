@@ -1,5 +1,15 @@
 """engine.technologies.chp — multiple CHP units: conversion, capacity, min-load,
 min-runtime, ramp limits, and start-up flags (for min-runtime and start-up cost).
+
+Optional per-unit keys (all off by default, so existing configs behave exactly
+as before):
+  on_init            1 if the unit was running in the hour before this window.
+                     Without it every window assumes the unit starts cold, which
+                     counts a start-up at every seam of a rolling solve.
+  max_starts_per_day cap on start-ups in any rolling 24 h. Limits the daily
+                     on/off cycling that wears real engines.
+  su_hist            start-ups (0/1) in the hours just before this window, most
+                     recent last, so the 24 h cap holds across window seams.
 """
 import pyomo.environ as pyo
 
@@ -18,9 +28,22 @@ def add_chp(m):
         rule=lambda m, c, t: m.chp_el[c, t] >= par[c]["min_load"] * par[c]["p_el_max"] * m.chp_on[c, t])
 
     def su_rule(m, c, t):
-        prev_on = 0 if t == m.T.first() else m.chp_on[c, t - 1]
+        prev_on = par[c].get("on_init", 0) if t == m.T.first() else m.chp_on[c, t - 1]
         return m.chp_su[c, t] >= m.chp_on[c, t] - prev_on
     m.chp_startup = pyo.Constraint(m.CHP, m.T, rule=su_rule)
+
+    def max_starts_rule(m, c, t):
+        cap = par[c].get("max_starts_per_day", None)
+        if cap is None:
+            return pyo.Constraint.Skip
+        ts = list(m.T)
+        i = ts.index(t)
+        in_window = sum(m.chp_su[c, k] for k in ts[max(0, i - 23): i + 1])
+        lookback = 23 - i                       # hours of the 24 h before the window
+        hist = list(par[c].get("su_hist", []))
+        before = sum(hist[-lookback:]) if lookback > 0 and hist else 0
+        return in_window + before <= cap
+    m.chp_max_starts = pyo.Constraint(m.CHP, m.T, rule=max_starts_rule)
 
     def minrun_rule(m, c, t):
         L = int(par[c].get("min_runtime_h", 1))

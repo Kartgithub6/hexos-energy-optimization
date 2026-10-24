@@ -1,4 +1,9 @@
-"""engine.technologies.battery — electrical storage."""
+"""engine.technologies.battery — electrical storage.
+
+Optional `fixed_ch` / `fixed_dis` lists pin the battery to a precomputed
+schedule (for example a simple self-consumption rule), so the rest of the site
+is still optimised around it. Used for baseline comparisons.
+"""
 import pyomo.environ as pyo
 
 
@@ -11,5 +16,9 @@ def add_battery(m, b, cyclic=True):
     m.soc_cap = pyo.Constraint(m.T, rule=lambda m, t: m.soc[t] <= b["E_cap"])
     m.ch_limit = pyo.Constraint(m.T, rule=lambda m, t: m.p_ch[t] <= b["p_ch_max"])
     m.dis_limit = pyo.Constraint(m.T, rule=lambda m, t: m.p_dis[t] <= b["p_dis_max"])
+    if "fixed_ch" in b and "fixed_dis" in b:
+        for i, t in enumerate(m.T):
+            m.p_ch[t].fix(b["fixed_ch"][i])
+            m.p_dis[t].fix(b["fixed_dis"][i])
     if cyclic:
         m.soc_cyclic = pyo.Constraint(rule=lambda m: m.soc[m.T.last()] == b["soc_init"])
