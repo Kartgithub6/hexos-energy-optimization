@@ -54,17 +54,43 @@ ramp limits, and start-up costs.
   real day, switch technologies on and off, and solve it live. Results are saved
   to a PostgreSQL database so you can compare past runs.
 
-- Backed by a 76-test pytest suite, run by GitHub Actions on every push,
+- Prices battery wear into dispatch (opt-in, `battery.wear`): a throughput
+  cost, or the piecewise-linear cycle-depth model of Xu et al. (2018) that
+  makes deep cycles dearer than shallow ones and stays a pure LP. Every
+  schedule is then scored by one yardstick (rainflow counting + the same
+  stress function + calendar ageing). On 2019 prices the wear-blind battery's
+  ~€5,500/yr gross saving becomes about −€1,000/yr once wear is priced (cells
+  at €200/kWh, 6,000 cycles); wear-aware dispatch keeps +€2,300/yr. On 2024
+  prices wear-aware dispatch nets ~€9,900/yr vs ~€7,800/yr wear-blind and
+  roughly halves the cycling. Wear parameters are illustrative, not a fitted
+  cell: `scenarios/run_wear_value.py`, `scenarios/plot_wear_value.py`.
+
+- Runs on three modelling layers that reach the same optimum: Pyomo (the
+  original), a Linopy port (`src/hexos_linopy`) and, as step 1, the site as a
+  PyPSA network (`hexos_linopy.pypsa_site`). `solve_rolling(..., backend=
+  "linopy")` switches the rolling solver. `scenarios/bench_backends.py`
+  measures build + solve time and memory: Linopy is ~4.5x faster on one
+  full-year model, Pyomo ~9x faster on 365 small rolling windows.
+
+- Keeps its open data current: `python -m engine.data.feed` pulls DE-LU
+  day-ahead prices from Energy-Charts and SMARD (cross-checked against each
+  other) and Munich weather from Open-Meteo; `.github/workflows/data_feed.yml`
+  runs it daily and commits to a `data-feed` branch;
+  `scenarios/prepare_year_feed.py` turns the feed into a HEXOS year file.
+
+- Backed by a 134-test pytest suite, run by GitHub Actions on every push,
   covering storage continuity, constraint satisfaction, energy-balance
-  invariants, MPC behaviour, and the bidding layer (monotone curves,
-  settlement, ordering against perfect foresight).
+  invariants, MPC behaviour, the bidding layer (monotone curves, settlement,
+  ordering against perfect foresight), the wear models and rainflow counter,
+  backend parity, and the data-feed parsers.
 
 ## Getting started
 
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-pytest -q                                           # should show 76 passing
+pytest -q                                           # 134 passing (Linopy/PyPSA tests skip if not installed)
+pip install linopy pypsa                            # optional: the Linopy / PyPSA back-ends
 streamlit run app/streamlit_app.py                  # launch the dashboard
 ```
 
