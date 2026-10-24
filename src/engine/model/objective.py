@@ -18,6 +18,13 @@ optimiser stops draining the battery just before the window ends. Set it to a
 number, or to "auto" for the median import price of the window times the
 discharge efficiency (what a stored kWh is roughly worth when used later). It
 only shapes decisions; reported costs never include it.
+
+Battery wear (optional, off by default): when cfg['battery']['wear'] is set,
+engine.technologies.wear adds a degradation cost for every kWh cycled, so the
+battery only cycles when the spread also pays for the capacity it uses up.
+Unlike the terminal value this is a real cost, but solve_rolling still reports
+energy cost only; score wear after the fact with engine.postprocess.wear so
+wear-aware and wear-blind runs are judged by the same yardstick.
 """
 import statistics
 import pyomo.environ as pyo
@@ -43,8 +50,14 @@ def add_objective(m):
                       + chp_su) * m.dt
         terms += demand_charge * m.peak_import
         terms -= _terminal_value(m) * m.soc[m.T.last()]
+        terms += _wear_cost(m)
         return terms
     m.cost = pyo.Objective(rule=total_cost, sense=pyo.minimize)
+
+
+def _wear_cost(m):
+    f = getattr(m, "wear_cost_terms", None)
+    return f(m) if f is not None else 0.0
 
 
 def _terminal_value(m):
