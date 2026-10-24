@@ -45,7 +45,20 @@ def _slice(data, start, end):
     }
 
 
-def solve_rolling(data, cfg, window_h=48, commit_h=24, dt_hours=1.0, verbose=True):
+def _solve_window(wdata, wcfg, dt_hours, backend):
+    """Build, solve and extract one window with the chosen modelling layer."""
+    if backend == "pyomo":
+        m = build_model(wdata, wcfg, dt_hours, cyclic=False)
+        solve(m)
+        return extract_results(m)
+    if backend == "linopy":
+        from hexos_linopy import run_linopy      # optional dependency
+        return run_linopy(wdata, wcfg, dt_hours, cyclic=False)
+    raise ValueError(f"backend must be 'pyomo' or 'linopy', got {backend!r}")
+
+
+def solve_rolling(data, cfg, window_h=48, commit_h=24, dt_hours=1.0, verbose=True,
+                  backend="pyomo"):
     if cfg.get("evs"):
         raise NotImplementedError(
             "Rolling horizon does not support EV charging (absolute time windows "
@@ -65,9 +78,7 @@ def solve_rolling(data, cfg, window_h=48, commit_h=24, dt_hours=1.0, verbose=Tru
         wdata = _slice(data, start, end)
         wcfg = carry.window_cfg(copy.deepcopy(cfg), st, start, end, n)
 
-        m = build_model(wdata, wcfg, dt_hours, cyclic=False)
-        solve(m)
-        r = extract_results(m)
+        r = _solve_window(wdata, wcfg, dt_hours, backend)
 
         for k in _SERIES_KEYS:
             out[k].extend(r[k][:commit])
