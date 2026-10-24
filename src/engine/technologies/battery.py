@@ -3,8 +3,12 @@
 Optional `fixed_ch` / `fixed_dis` lists pin the battery to a precomputed
 schedule (for example a simple self-consumption rule), so the rest of the site
 is still optimised around it. Used for baseline comparisons.
+
+Optional `wear` dict adds a degradation cost (see engine.technologies.wear).
 """
 import pyomo.environ as pyo
+
+from engine.technologies.wear import add_wear
 
 
 def add_battery(m, b, cyclic=True):
@@ -22,3 +26,4 @@ def add_battery(m, b, cyclic=True):
             m.p_dis[t].fix(b["fixed_dis"][i])
     if cyclic:
         m.soc_cyclic = pyo.Constraint(rule=lambda m: m.soc[m.T.last()] == b["soc_init"])
+    add_wear(m, b)
