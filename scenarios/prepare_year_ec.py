@@ -123,6 +123,37 @@ def fetch_prices(year, bzn=BZN, resolution="hourly", timeout=60):
     return df
 
 
+def align_hours(px, hy, max_fill=6):
+    """Join prices and When2Heat on hour-of-year WITHOUT losing hours.
+
+    The old inner join silently dropped any hour missing on either side, and
+    the output's t column renumbers rows, so one dropped hour shifted every
+    later price by an hour against the calendar. That happened in
+    year_DE_2024.csv: When2Heat 2022 lacks one hour at its DST switch, so
+    2024-10-29 01:00 UTC (hoy 7249) was dropped and the last nine weeks of
+    prices sit one row early. The data-feed cross-check against SMARD found it.
+
+    Now the price calendar leads; up to `max_fill` hours missing on the
+    When2Heat side are interpolated, and anything more stops the run.
+    """
+    lo = int(px["hoy"].min())
+    hi = int(min(px["hoy"].max(), hy["hoy"].max()))
+    want = pd.RangeIndex(lo, hi + 1, name="hoy")
+    p = px.drop_duplicates("hoy").set_index("hoy").reindex(want)
+    h = hy.drop_duplicates("hoy").set_index("hoy").reindex(want)
+    for name, part in (("price", p), ("When2Heat", h)):
+        miss = part.index[part.isna().any(axis=1)].tolist()
+        if len(miss) > max_fill:
+            sys.exit(f"{len(miss)} {name} hours missing (first {miss[:5]}). "
+                     f"Too many to fill honestly.")
+        if miss:
+            print(f"  ! {name}: {len(miss)} hour(s) missing at hoy {miss}; "
+                  f"interpolated so later hours stay on the calendar.")
+    p = p.interpolate(limit_direction="both")
+    h = h.interpolate(limit_direction="both")
+    return p.join(h, rsuffix="_w2h").reset_index()
+
+
 # ---------------------------------------------------------------------------
 # When2Heat
 # ---------------------------------------------------------------------------
@@ -178,6 +209,10 @@ def main():
                          "Munich TMY irradiance and HAS seasonality. "
                          "'synthetic' reproduces prepare_year.py's daily sine, "
                          "which does not.")
+    ap.add_argument("--suffix", default="",
+                    help="appended to the output name, e.g. 'retail' writes "
+                         "year_DE_2024_retail.csv, so two tariff variants of "
+                         "the same year can sit side by side")
     ap.add_argument("--export-mode", choices=["retail", "spot"], default="retail",
                     help="'retail': import = wholesale + full markup, export = "
                          "wholesale (a supplied-site tariff; export is almost "
@@ -218,7 +253,7 @@ def main():
     px["hoy"] = ((px.index - pd.Timestamp(year=args.year, month=1, day=1))
                  .total_seconds() // 3600).astype(int)
 
-    merged = px.merge(hy, on="hoy", how="inner").sort_values("hoy")
+    merged = align_hours(px, hy)
     n = len(merged)
     print(f"\nAligned {n} h")
     if n < 8000:
@@ -286,7 +321,10 @@ def main():
         "cop": merged[COP_COL].to_numpy(float),
     })
 
-    op = os.path.join(OUT_DIR, f"year_{COUNTRY}_{args.year}.csv")
+    name = f"year_{COUNTRY}_{args.year}"
+    if args.suffix:
+        name += f"_{args.suffix}"
+    op = os.path.join(OUT_DIR, f"{name}.csv")
     header = (
         f"# HEXOS year {COUNTRY} {args.year} ({args.bzn})\n"
         f"# prices : Fraunhofer ISE Energy-Charts day-ahead, {args.year}, "

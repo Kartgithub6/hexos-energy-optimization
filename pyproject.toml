@@ -13,6 +13,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+pypsa = ["linopy>=0.5", "pypsa>=1.0"]
 
 [build-system]
 requires = ["setuptools>=61"]

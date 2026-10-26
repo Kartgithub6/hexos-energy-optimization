@@ -23,5 +23,13 @@ def add_heat_balance(m):
 
 
 def add_peak_tracking(m):
-    """peak_import >= grid import every hour, so it captures the maximum."""
+    """peak_import >= grid import every hour, so it captures the maximum.
+
+    cfg['peak_so_far'] (optional) is the highest import already drawn earlier in
+    the billing period. A rolling or MPC solve passes it forward, so a window is
+    only charged for raising the peak above what has already been set.
+    """
     m.peak_track = pyo.Constraint(m.T, rule=lambda m, t: m.peak_import >= m.p_import[t])
+    floor = m.cfg.get("peak_so_far", 0.0)
+    if floor > 0:
+        m.peak_floor = pyo.Constraint(rule=lambda m: m.peak_import >= floor)

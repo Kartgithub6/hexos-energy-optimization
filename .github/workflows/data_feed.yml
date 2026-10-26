@@ -1,0 +1,80 @@
+# Daily open-data refresh for HEXOS.
+#
+# Pulls the newest DE-LU day-ahead prices (Energy-Charts, cross-checked against
+# SMARD) and Munich weather (Open-Meteo) into data/feed/, and commits the CSVs
+# to the `data-feed` branch, so main's history stays code-only.
+#
+# 13:30 UTC is after the day-ahead auction results (published ~12:45 CET), so
+# tomorrow's prices are in the run. Run it by hand from the Actions tab too.
+name: Data feed
+
+on:
+  schedule:
+    - cron: "30 13 * * *"
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Backfill from this date (YYYY-MM-DD); empty = from last stored day"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-feed
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        # importing engine.data.feed loads the engine package, which needs pyomo
+        run: pip install pandas pyomo
+
+      - name: Restore the stored feed from the data-feed branch
+        run: |
+          if git ls-remote --exit-code --heads origin data-feed; then
+            git fetch origin data-feed
+            git checkout origin/data-feed -- data/feed || true
+          fi
+
+      - name: Refresh
+        env:
+          PYTHONPATH: src
+        run: |
+          if [ -n "${{ github.event.inputs.since }}" ]; then
+            python -m engine.data.feed --since "${{ github.event.inputs.since }}"
+          else
+            python -m engine.data.feed
+          fi
+
+      - name: Commit to data-feed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p /tmp/feed && cp -r data/feed/. /tmp/feed/
+          if git ls-remote --exit-code --heads origin data-feed; then
+            git checkout -B data-feed origin/data-feed
+          else
+            git checkout --orphan data-feed
+            git rm -rf --cached . > /dev/null
+            find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          fi
+          mkdir -p data/feed && cp -r /tmp/feed/. data/feed/
+          git add -f data/feed
+          if git diff --cached --quiet; then
+            echo "::notice::No new data."
+            exit 0
+          fi
+          git commit -m "Data feed: $(date -u +%Y-%m-%d)"
+          git push origin data-feed

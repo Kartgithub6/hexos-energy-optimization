@@ -160,6 +160,11 @@ def main():
     ap.add_argument("--commit", type=int, default=1,
                     help="MPC re-planning cadence [h]. 1 = re-plan hourly, "
                          "which isolates horizon length cleanly.")
+    ap.add_argument("--terminal-value", default="off",
+                    help="credit battery energy left at the end of each MPC "
+                         "window: 'off' (default), 'auto' (median window "
+                         "price x discharge efficiency), or a number in "
+                         "EUR/kWh. The single-shot benchmark never gets it.")
     ap.add_argument("--horizons", type=str,
                     default=",".join(str(h) for h in HORIZONS))
     ap.add_argument("--seasons", type=str, default=",".join(SEASONS),
@@ -167,6 +172,18 @@ def main():
     args = ap.parse_args()
 
     year_path, tag = resolve_dataset(args.data)
+    # Settings that change the answer go into the folder name, so a run with a
+    # different commit interval or terminal value never overwrites another.
+    if args.commit != 1:
+        tag += f"_c{args.commit}"
+    tv = args.terminal_value.strip().lower()
+    if tv not in ("off", "auto"):
+        try:
+            tv = float(tv)
+        except ValueError:
+            sys.exit("--terminal-value must be off, auto, or a number in EUR/kWh")
+    if tv != "off":
+        tag += f"_tv{tv}"
     out_root = os.path.join(SWEEP_ROOT, tag)
 
     horizons = [int(x) for x in args.horizons.split(",")]
@@ -179,6 +196,9 @@ def main():
     data = load_timeseries(year_path)
     n_year = len(data["T"])
     cfg = base_cfg()
+    mpc_cfg = base_cfg()
+    if tv != "off":
+        mpc_cfg["battery"]["terminal_value"] = tv
 
     too_late = [s for s in seasons if SEASONS[s] + hours > n_year]
     if too_late:
@@ -187,7 +207,8 @@ def main():
 
     print(f"MPC horizon sensitivity across seasons\n"
           f"  dataset {os.path.basename(year_path)}  ->  results/horizon_sweep/{tag}\n"
-          f"  {args.days} d per week · commit {args.commit} h · perfect foresight\n"
+          f"  {args.days} d per week · commit {args.commit} h · perfect foresight"
+          f" · terminal value {tv}\n"
           f"  horizons {horizons} · seasons {seasons}\n")
 
     summary = []
@@ -213,7 +234,7 @@ def main():
 
         for h in horizons:
             t0 = time.time()
-            res = run_mpc(week, cfg, forecaster=perfect_forecaster,
+            res = run_mpc(week, mpc_cfg, forecaster=perfect_forecaster,
                           horizon_h=h, commit_h=args.commit)
             write_run(os.path.join(out_root, season, f"h{h:02d}", "dispatch.csv"),
                       week, res)
@@ -240,7 +261,8 @@ def main():
     with open(os.path.join(out_root, "meta.json"), "w") as f:
         json.dump({"dataset": os.path.basename(year_path), "tag": tag, "seasons": {s: SEASONS[s] for s in seasons},
                    "hours": hours, "commit_h": args.commit,
-                   "horizons": horizons, "forecast": "perfect"}, f, indent=2)
+                   "horizons": horizons, "forecast": "perfect",
+                   "terminal_value": tv}, f, indent=2)
 
     # Cross-season read, which is the point of running four weeks.
     print("=== Range across seasons ===")
