@@ -1,0 +1,264 @@
+<title>HEXOS Battery Wear Explorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column, controls on top, three linked charts; reads like a lab notebook page */
+:root{
+  --bg:#f6f5f1; --panel:#fdfcf9; --ink:#1b1b3a; --ink-2:#4a4e69; --ink-3:#7a7c92;
+  --line:#e2e0d8; --grid:#ebe9e2; --accent:#3d348b;
+  --blind:#eb6834; --thr:#1baf7a; --depth:#6250d6; --price:#4a4e69;
+  --pos:#2f7d4f; --neg:#b4413a;
+  --sans:'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
+  --mono:'IBM Plex Mono', Consolas, 'Courier New', monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14142a; --panel:#1c1c36; --ink:#ecebf5; --ink-2:#c3c2d6; --ink-3:#8f8ea8;
+  --line:#2e2e4c; --grid:#26263f; --accent:#a99ff0;
+  --blind:#ff8a57; --thr:#2fc790; --depth:#9a8cf0; --price:#c3c2d6;
+  --pos:#6fcf97; --neg:#f08a80; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#14142a; --panel:#1c1c36; --ink:#ecebf5; --ink-2:#c3c2d6; --ink-3:#8f8ea8;
+  --line:#2e2e4c; --grid:#26263f; --accent:#a99ff0;
+  --blind:#ff8a57; --thr:#2fc790; --depth:#9a8cf0; --price:#c3c2d6;
+  --pos:#6fcf97; --neg:#f08a80; color-scheme:dark }
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.5;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:32px 48px}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+.eyebrow{font-family:var(--mono);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:clamp(28px,4.4vw,44px);line-height:1.12;font-weight:600;margin:6px 0 10px;text-wrap:balance;max-width:22ch}
+.lede{color:var(--ink-2);max-width:66ch;margin:0}
+.controls{display:flex;flex-wrap:wrap;gap:20px 36px;align-items:end;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.ctl{display:flex;flex-direction:column;gap:8px;min-width:0}
+.ctl label,.ctl .lab{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{font:500 14px var(--sans);color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:999px;padding:7px 14px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.seg button:focus-visible,input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.slider{display:flex;align-items:center;gap:12px}
+input[type=range]{width:min(320px,70vw);accent-color:var(--accent)}
+.val{font:600 18px var(--mono);font-variant-numeric:tabular-nums;min-width:7ch}
+.kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.kpi .k{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.kpi .v{font-size:clamp(22px,3.2vw,30px);font-weight:700;font-variant-numeric:tabular-nums;line-height:1.15}
+.kpi .s{color:var(--ink-2);font-size:14px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 18px 12px;min-width:0;display:flex;flex-direction:column;gap:6px}
+.card h2{font-size:17px;font-weight:600;margin:0}
+.card .sub{color:var(--ink-2);font-size:14px;margin:0 0 4px}
+svg{display:block;width:100%;height:auto;overflow:visible}
+svg text{fill:var(--ink-2);font-family:var(--sans);font-size:12px}
+svg .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:3px;border-radius:2px;display:inline-block}
+.sw.box{height:10px;width:10px;border-radius:2px}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-size:13px;line-height:1.4;padding:8px 10px;border-radius:8px;max-width:240px;z-index:20;font-variant-numeric:tabular-nums}
+.notes{color:var(--ink-2);font-size:14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 28px}
+.notes p{margin:0}
+.notes b{color:var(--ink)}
+footer{color:var(--ink-3);font-size:13px;border-top:1px solid var(--line);padding-top:14px;display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:space-between}
+a{color:var(--accent)}
+@media (max-width:760px){.kpis{grid-template-columns:minmax(0,1fr)}.grid2,.notes{grid-template-columns:minmax(0,1fr)}.controls{position:static}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">HEXOS · battery wear explorer</div>
+    <h1>What does a battery really earn once its wear is priced?</h1>
+    <p class="lede">A 400 kWh / 200 kW battery at a fictional German industrial site, optimised hour by hour against real day-ahead prices for a full year. Wear-blind dispatch cycles whenever a spread covers the round-trip losses. Wear-aware dispatch also has to pay for the cells it uses up. Move the controls to see who comes out ahead.</p>
+  </header>
+
+  <section class="controls" aria-label="Scenario">
+    <div class="ctl"><span class="lab" id="yl">Price year and tariff</span><div class="seg" id="years" role="group" aria-labelledby="yl"></div></div>
+    <div class="ctl"><label for="capex">Cell value, € per kWh</label><div class="slider"><input id="capex" type="range" min="0" max="7" step="1" value="3"><span class="val" id="capexv"></span></div></div>
+  </section>
+
+  <section class="kpis" aria-live="polite">
+    <div class="kpi"><span class="k">Net value per year</span><span class="v" id="k1"></span><span class="s" id="k1s"></span></div>
+    <div class="kpi"><span class="k">Full cycles per year</span><span class="v" id="k2"></span><span class="s">wear-blind → wear-aware (cycle depth)</span></div>
+    <div class="kpi"><span class="k">Expected battery life</span><span class="v" id="k3"></span><span class="s">cycling + calendar ageing</span></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Gross saving and what is left after wear</h2>
+      <p class="sub">Light bar: saving against no battery, energy only. Solid bar: after the cells it used up.</p>
+      <svg id="bars" viewBox="0 0 480 300" role="img" aria-label="Gross saving and net value for three dispatch strategies"></svg>
+      <div class="legend"><span><i class="sw box" style="background:var(--blind)"></i>Wear-blind</span><span><i class="sw box" style="background:var(--thr)"></i>Wear-aware, throughput</span><span><i class="sw box" style="background:var(--depth)"></i>Wear-aware, cycle depth</span></div>
+    </section>
+    <section class="card">
+      <h2>The dearer the cells, the wider the gap</h2>
+      <p class="sub">Net value per year against the value of the cells.</p>
+      <svg id="sweep" viewBox="0 0 480 300" role="img" aria-label="Net value against cell value for wear-blind and wear-aware dispatch"></svg>
+      <div class="legend"><span><i class="sw" style="background:var(--blind)"></i>Wear-blind</span><span><i class="sw" style="background:var(--thr)"></i>Throughput</span><span><i class="sw" style="background:var(--depth)"></i>Cycle depth</span></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px 24px;align-items:end">
+      <div><h2>One week of battery charge</h2><p class="sub" id="weeksub"></p></div>
+      <div class="ctl"><label for="week">Week of the year</label><div class="slider"><input id="week" type="range" min="1" max="52" step="1" value="27"><span class="val" id="weekv"></span></div></div>
+    </div>
+    <svg id="soc" viewBox="0 0 1000 260" role="img" aria-label="Battery state of charge over one week, wear-blind and wear-aware"></svg>
+    <svg id="price" viewBox="0 0 1000 120" role="img" aria-label="Day-ahead price over the same week"></svg>
+    <div class="legend"><span><i class="sw" style="background:var(--blind)"></i>Wear-blind</span><span><i class="sw" style="background:var(--depth)"></i>Wear-aware, cycle depth</span><span><i class="sw" style="background:var(--price)"></i>Day-ahead price, €/MWh</span></div>
+  </section>
+
+  <section class="notes">
+    <p><b>How wear is priced.</b> Throughput: every kWh in or out costs cell value ÷ (2 × cycle life). Cycle depth (Xu et al., 2018): the battery is split into five energy slices and deeper slices cost more, so shallow cycles are cheap and deep ones dear. Both stay linear programs.</p>
+    <p><b>How every case is scored.</b> The same yardstick for all three: rainflow-count the charge trace, apply life used per cycle = depth<sup>1.5</sup> ÷ 6,000, add calendar ageing over a 15-year calendar life, and convert to euros of cells used up.</p>
+    <p><b>What is illustrative.</b> The ageing curve is an LFP-like order of magnitude, not a fitted cell; there is no temperature or C-rate effect yet. The site is fictional; its heat and heat-pump profiles come from When2Heat.</p>
+    <p><b>The model.</b> HEXOS, a Pyomo / HiGHS mixed-integer program for a site with solar, a CHP engine, a heat pump, a heating rod, a heat store and this battery, solved as 365 overlapping 48-hour windows.</p>
+  </section>
+
+  <footer>
+    <span>Karthik Murugesan · <a href="https://github.com/Kartgithub6/hexos-energy-optimization">github.com/Kartgithub6/hexos-energy-optimization</a></span>
+    <span>Prices: OPSD (2019), Fraunhofer ISE Energy-Charts and Bundesnetzagentur SMARD (2024–25), CC BY 4.0</span>
+  </footer>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const D = /*DATA*/null;
+const $ = id => document.getElementById(id);
+const NS = 'http://www.w3.org/2000/svg';
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const eur = v => (v < 0 ? '−' : '') + '€' + (Math.abs(v) >= 1000 ? (Math.abs(v)/1000).toFixed(1) + 'k' : Math.round(Math.abs(v)));
+const CASES = [['B','Wear-blind','--blind'],['C','Throughput','--thr'],['D','Cycle depth','--depth']];
+let state = {tag: D.order.includes('DE_2024') ? 'DE_2024' : D.order[0], ci: D.capex.indexOf(200) >= 0 ? D.capex.indexOf(200) : 0, week: 27};
+try { const s = JSON.parse(localStorage.getItem('hexos-wear') || '{}'); if (s.tag && D.sets[s.tag]) state.tag = s.tag; if (s.ci != null && s.ci < D.capex.length) state.ci = s.ci; if (s.week) state.week = s.week; } catch (e) {}
+const decode = b64 => { const s = atob(b64), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; };
+const decode16 = b64 => new Int16Array(decode(b64).buffer);
+const cache = {};
+function trace(tag, key){ const k = tag + key; if (!cache[k]) cache[k] = decode(D.sets[tag].soc[key]); return cache[k]; }
+function prices(tag){ const k = tag + 'price'; if (!cache[k]) cache[k] = decode16(D.sets[tag].price); return cache[k]; }
+
+function fit(svg, h){ const w = Math.max(300, Math.round(svg.getBoundingClientRect().width || svg.parentNode.clientWidth || 480)); svg.setAttribute('viewBox', `0 0 ${w} ${h}`); return w; }
+function el(name, attrs, parent){ const e = document.createElementNS(NS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function clear(svg){ while (svg.firstChild) svg.removeChild(svg.firstChild); }
+function niceTicks(lo, hi, n){ const span = hi - lo, step0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(step0))), f = step0 / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag; const out = []; for (let v = Math.ceil(lo/step)*step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6)); return out; }
+const tip = $('tip');
+function showTip(evt, html){ tip.innerHTML = html; tip.hidden = false; const x = Math.min(evt.clientX + 14, innerWidth - 250), y = evt.clientY + 14; tip.style.left = x + 'px'; tip.style.top = y + 'px'; }
+function hideTip(){ tip.hidden = true; }
+function row(tag, ci, c){ return D.sets[tag].rows[c][ci]; }
+
+function buildYears(){
+  const g = $('years'); g.innerHTML = '';
+  D.order.forEach(t => { const b = document.createElement('button'); b.type = 'button'; b.textContent = D.sets[t].label; b.setAttribute('aria-pressed', t === state.tag); b.onclick = () => { state.tag = t; render(); }; g.appendChild(b); });
+}
+
+function renderKPIs(){
+  const b = row(state.tag, state.ci, 'B'), d = row(state.tag, state.ci, 'D');
+  const diff = d.net - b.net;
+  $('k1').innerHTML = `${eur(b.net)} <span style="color:var(--ink-3);font-weight:400">→</span> ${eur(d.net)}`;
+  $('k1s').innerHTML = `wear-blind → wear-aware: <b style="color:${diff >= 0 ? 'var(--pos)' : 'var(--neg)'}">${diff >= 0 ? '+' : '−'}${eur(Math.abs(diff))} a year</b>`;
+  $('k2').textContent = `${Math.round(b.efc)} → ${Math.round(d.efc)}`;
+  $('k3').textContent = `${b.life.toFixed(1)} → ${d.life.toFixed(1)} yr`;
+}
+
+function renderBars(){
+  const svg = $('bars'); clear(svg);
+  const H = 300, W = fit(svg, H), small = W < 460, L = 52, R = 10, T = 26, B = small ? 60 : 46;
+  const rows = CASES.map(([c]) => row(state.tag, state.ci, c));
+  let lo = Math.min(0, ...rows.map(r => r.net)), hi = Math.max(...rows.map(r => r.gross));
+  // fix the scale per price year so moving the cell value shows bars shrinking
+  const all = D.sets[state.tag].rows; lo = Math.min(lo, ...['B','C','D'].flatMap(c => all[c].map(r => r.net))); hi = Math.max(hi, ...all.B.map(r => r.gross));
+  const ticks = niceTicks(lo, hi, 5); lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length-1]);
+  const y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  ticks.forEach(t => { el('line', {x1:L, x2:W-R, y1:y(t), y2:y(t), stroke: t === 0 ? css('--ink-3') : css('--grid'), 'stroke-width':1}, svg);
+    const tx = el('text', {x:L-8, y:y(t)+4, 'text-anchor':'end', class:'num'}, svg); tx.textContent = eur(t); });
+  const band = (W - L - R) / 3, bw = Math.min(64, band * 0.5);
+  CASES.forEach(([c, name, col], i) => {
+    const r = rows[i], cx = L + band * (i + .5), color = css(col);
+    const g0 = el('rect', {x:cx-bw/2, y:Math.min(y(r.gross), y(0)), width:bw, height:Math.abs(y(r.gross)-y(0)), fill:color, 'fill-opacity':.22, rx:3}, svg);
+    el('rect', {x:cx-bw/2, y:Math.min(y(r.net), y(0)), width:bw, height:Math.max(1, Math.abs(y(r.net)-y(0))), fill:color, rx:3}, svg);
+    const t1 = el('text', {x:cx, y:y(Math.max(r.gross, 0)) - 8, 'text-anchor':'middle', class:'num', style:'font-weight:600;fill:var(--ink)'}, svg); t1.textContent = 'net ' + eur(r.net);
+    const t2 = el('text', {x:cx, y:H - B + 18, 'text-anchor':'middle'}, svg); t2.textContent = small ? name.replace('Wear-blind','Blind').replace('Cycle depth','Depth') : name;
+    const t3 = el('text', {x:cx, y:H - B + 34, 'text-anchor':'middle', class:'num', style:'font-size:11px;fill:var(--ink-3)'}, svg); t3.textContent = small ? `${Math.round(r.efc)} cycles` : `${Math.round(r.efc)} cycles · ${r.life.toFixed(1)} yr`;
+    if (small){ const t4 = el('text', {x:cx, y:H - B + 48, 'text-anchor':'middle', class:'num', style:'font-size:11px;fill:var(--ink-3)'}, svg); t4.textContent = `${r.life.toFixed(1)} yr life`; }
+    const hit = el('rect', {x:cx-band/2, y:T, width:band, height:H-T-B, fill:'transparent'}, svg);
+    hit.addEventListener('mousemove', e => showTip(e, `<b>${name}</b><br>gross ${eur(r.gross)} / yr<br>wear ${eur(r.wear)} / yr<br>net ${eur(r.net)} / yr<br>${Math.round(r.efc)} full cycles / yr · depth ${r.depth.toFixed(2)}<br>life ${r.life.toFixed(1)} yr`));
+    hit.addEventListener('mouseleave', hideTip);
+  });
+}
+
+function renderSweep(){
+  const svg = $('sweep'); clear(svg);
+  const H = 300, W = fit(svg, H), L = 52, R = 14, T = 16, B = 40, xs = D.capex;
+  const all = D.sets[state.tag].rows;
+  let lo = Math.min(0, ...['B','C','D'].flatMap(c => all[c].map(r => r.net))), hi = Math.max(...['B','C','D'].flatMap(c => all[c].map(r => r.net)));
+  const ticks = niceTicks(lo, hi, 5); lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks[ticks.length-1]);
+  const x = v => L + (v - xs[0]) / (xs[xs.length-1] - xs[0]) * (W - L - R), y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  ticks.forEach(t => { el('line', {x1:L, x2:W-R, y1:y(t), y2:y(t), stroke: t === 0 ? css('--ink-3') : css('--grid')}, svg);
+    const tx = el('text', {x:L-8, y:y(t)+4, 'text-anchor':'end', class:'num'}, svg); tx.textContent = eur(t); });
+  xs.forEach(v => { if (v % 100) return; const tx = el('text', {x:x(v), y:H-B+18, 'text-anchor':'middle', class:'num'}, svg); tx.textContent = '€' + v; });
+  const xl = el('text', {x:(L+W-R)/2, y:H-6, 'text-anchor':'middle', style:'fill:var(--ink-3)'}, svg); xl.textContent = 'cell value, € per kWh';
+  const cur = xs[state.ci];
+  el('line', {x1:x(cur), x2:x(cur), y1:T, y2:H-B, stroke:css('--ink-3'), 'stroke-dasharray':'3 4'}, svg);
+  CASES.forEach(([c, name, col]) => {
+    const pts = all[c].map((r, i) => `${x(xs[i]).toFixed(1)},${y(r.net).toFixed(1)}`).join(' ');
+    el('polyline', {points:pts, fill:'none', stroke:css(col), 'stroke-width':c === 'C' ? 1.5 : 2.5, 'stroke-dasharray': c === 'C' ? '5 4' : 'none', 'stroke-linejoin':'round', 'stroke-linecap':'round'}, svg);
+    const r = all[c][state.ci];
+    el('circle', {cx:x(cur), cy:y(r.net), r:5, fill:css(col), stroke:css('--panel'), 'stroke-width':2}, svg);
+  });
+  const hit = el('rect', {x:L, y:T, width:W-L-R, height:H-T-B, fill:'transparent', style:'cursor:pointer'}, svg);
+  const pick = e => { const bb = svg.getBoundingClientRect(), px = (e.clientX - bb.left) / bb.width * W; let best = 0; xs.forEach((v, i) => { if (Math.abs(x(v) - px) < Math.abs(x(xs[best]) - px)) best = i; }); return best; };
+  hit.addEventListener('mousemove', e => { const i = pick(e); showTip(e, `<b>cells at €${xs[i]}/kWh</b><br>` + CASES.map(([c, n]) => `${n}: ${eur(all[c][i].net)}`).join('<br>')); });
+  hit.addEventListener('mouseleave', hideTip);
+  hit.addEventListener('click', e => { state.ci = pick(e); render(); });
+}
+
+function renderWeek(){
+  const set = D.sets[state.tag], n = set.hours, start = (state.week - 1) * 168, end = Math.min(start + 168, n);
+  const cap = D.capex[state.ci];
+  const blind = trace(state.tag, 'B'), depth = trace(state.tag, 'D' + cap), pr = prices(state.tag);
+  const d0 = new Date(Date.UTC(set.year, 0, 1) + start * 3600e3), d1 = new Date(Date.UTC(set.year, 0, 1) + (end - 1) * 3600e3);
+  const fmt = d => d.toLocaleDateString('en-GB', {day:'numeric', month:'short', timeZone:'UTC'});
+  $('weekv').textContent = state.week; $('weeksub').textContent = `${fmt(d0)} – ${fmt(d1)} ${set.year} · cells at €${cap}/kWh · hours in UTC`;
+  const svg = $('soc'); clear(svg);
+  const H = 260, W = fit(svg, H), L = 44, R = 10, T = 10, B = 26, len = end - start;
+  fit($('price'), 120);
+  const x = i => L + i / (len - 1) * (W - L - R), y = v => T + (100 - v) / 100 * (H - T - B);
+  [0, 25, 50, 75, 100].forEach(t => { el('line', {x1:L, x2:W-R, y1:y(t), y2:y(t), stroke:css('--grid')}, svg); const tx = el('text', {x:L-8, y:y(t)+4, 'text-anchor':'end', class:'num'}, svg); tx.textContent = t + '%'; });
+  for (let dd = 0; dd <= 7; dd++){ const i = dd * 24; if (i >= len) break; el('line', {x1:x(i), x2:x(i), y1:T, y2:H-B, stroke:css('--grid')}, svg);
+    const day = new Date(Date.UTC(set.year, 0, 1) + (start + i) * 3600e3); const tx = el('text', {x:x(i)+4, y:H-8}, svg); tx.textContent = day.toLocaleDateString('en-GB', W < 600 ? {weekday:'narrow', timeZone:'UTC'} : {weekday:'short', day:'numeric', timeZone:'UTC'}); }
+  const line = (arr, col, w) => { let p = ''; for (let i = 0; i < len; i++) p += `${x(i).toFixed(1)},${y(arr[start+i]).toFixed(1)} `; el('polyline', {points:p, fill:'none', stroke:css(col), 'stroke-width':w, 'stroke-linejoin':'round'}, svg); };
+  line(blind, '--blind', 2); line(depth, '--depth', 2.5);
+  // price strip
+  const ps = $('price'); clear(ps);
+  const PH = 120, PT = 8, PB = 18; let plo = Infinity, phi = -Infinity; for (let i = start; i < end; i++){ plo = Math.min(plo, pr[i]); phi = Math.max(phi, pr[i]); }
+  const pt = niceTicks(Math.min(0, plo), phi, 3); const pl = Math.min(0, plo, pt[0]), ph = Math.max(phi, pt[pt.length-1]);
+  const py = v => PT + (ph - v) / (ph - pl) * (PH - PT - PB);
+  pt.forEach(t => { el('line', {x1:L, x2:W-R, y1:py(t), y2:py(t), stroke: t === 0 ? css('--ink-3') : css('--grid')}, ps); const tx = el('text', {x:L-8, y:py(t)+4, 'text-anchor':'end', class:'num'}, ps); tx.textContent = t; });
+  let p = ''; for (let i = 0; i < len; i++) p += `${x(i).toFixed(1)},${py(pr[start+i]).toFixed(1)} `;
+  el('polyline', {points:p, fill:'none', stroke:css('--price'), 'stroke-width':1.6}, ps);
+  // crosshair
+  const cross = el('line', {y1:T, y2:H-B, stroke:css('--ink-3'), 'stroke-width':1, visibility:'hidden'}, svg);
+  const hit = el('rect', {x:L, y:T, width:W-L-R, height:H-T-B, fill:'transparent'}, svg);
+  hit.addEventListener('mousemove', e => { const bb = svg.getBoundingClientRect(); let i = Math.round(((e.clientX - bb.left) / bb.width * W - L) / (W - L - R) * (len - 1)); i = Math.max(0, Math.min(len - 1, i));
+    cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('visibility', 'visible');
+    const t = new Date(Date.UTC(set.year, 0, 1) + (start + i) * 3600e3);
+    showTip(e, `${t.toLocaleString('en-GB', {weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', timeZone:'UTC'})} UTC<br>price ${pr[start+i]} €/MWh<br>wear-blind ${blind[start+i]}%<br>cycle depth ${depth[start+i]}%`); });
+  hit.addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); hideTip(); });
+}
+
+function render(){
+  document.querySelectorAll('#years button').forEach((b, i) => b.setAttribute('aria-pressed', D.order[i] === state.tag));
+  $('capex').value = state.ci; $('capexv').textContent = '€' + D.capex[state.ci];
+  $('week').value = state.week;
+  renderKPIs(); renderBars(); renderSweep(); renderWeek();
+  try { localStorage.setItem('hexos-wear', JSON.stringify(state)); } catch (e) {}
+}
+$('capex').max = D.capex.length - 1;
+$('capex').addEventListener('input', e => { state.ci = +e.target.value; render(); });
+$('week').addEventListener('input', e => { state.week = +e.target.value; render(); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', render);
+new MutationObserver(render).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(render, 120); });
+buildYears(); render();
+</script>
