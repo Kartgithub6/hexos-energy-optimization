@@ -38,7 +38,8 @@ jobs:
           python-version: "3.11"
 
       - name: Install
-        run: pip install pandas
+        # importing engine.data.feed loads the engine package, which needs pyomo
+        run: pip install pandas pyomo
 
       - name: Restore the stored feed from the data-feed branch
         run: |
@@ -70,7 +71,7 @@ jobs:
             find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           fi
           mkdir -p data/feed && cp -r /tmp/feed/. data/feed/
-          git add data/feed
+          git add -f data/feed
           if git diff --cached --quiet; then
             echo "::notice::No new data."
             exit 0

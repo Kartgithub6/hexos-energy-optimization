@@ -43,6 +43,7 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 
 from engine import load_timeseries, solve_rolling
 from engine.data.io import make_data
@@ -76,6 +77,31 @@ def _solve(job):
     return keep
 
 
+def run_jobs(jobs, workers):
+    """Solve every case, in parallel when asked. If a worker process dies
+    (on Windows this shows up as BrokenProcessPool, e.g. when the machine runs
+    short of memory or a solver crashes), finish the remaining cases one by
+    one in this process instead of losing the whole run; a real solver error
+    then surfaces with its own traceback."""
+    if workers <= 1:
+        return {r["label"]: r for r in map(_solve, jobs)}
+    done = {}
+    try:
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            futs = {ex.submit(_solve, j): j[0] for j in jobs}
+            for f in futs:
+                r = f.result()
+                done[r["label"]] = r
+    except BrokenProcessPool:
+        left = [j for j in jobs if j[0] not in done]
+        print(f"  ! a worker process stopped; solving the remaining {len(left)} case(s) "
+              f"one by one in this process")
+        for j in left:
+            r = _solve(j)
+            done[r["label"]] = r
+    return done
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="2024")
@@ -91,7 +117,8 @@ def main():
     ap.add_argument("--segments", type=int, default=5)
     ap.add_argument("--calendar-life", type=float, default=15.0,
                     help="years to end of life from calendar ageing alone (0 = off)")
-    ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--workers", type=int, default=2,
+                    help="parallel solver processes; 1 = run everything in this process")
     args = ap.parse_args()
 
     path, tag = resolve_dataset(args.data)
@@ -125,8 +152,7 @@ def main():
           f"{args.dod_exponent:g}, calendar life {args.calendar_life:g} yr, capex {capexes} EUR/kWh"
           f"  (illustrative, not fitted to a cell)\n")
 
-    with ProcessPoolExecutor(max_workers=args.workers) as ex:
-        res = {r["label"]: r for r in ex.map(_solve, jobs)}
+    res = run_jobs(jobs, args.workers)
 
     A = res["A  no battery"]
     rows = []
