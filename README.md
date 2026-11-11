@@ -161,6 +161,25 @@ The cross-check has already paid off: it showed that `year_DE_2024.csv` had
 lost one hour at a daylight-saving switch, which shifted its last nine weeks of
 prices by an hour. `prepare_year_ec.py` now aligns hours without dropping any.
 
+## Tomorrow's plan, every day
+
+Right after the feed, the same Action runs `scenarios/run_daily_plan.py`: it
+takes tomorrow's day-ahead prices (Berlin delivery day), the Open-Meteo forecast
+for PV and heat-pump COP, and the demo site's demand profiles
+(`data/site/site_profiles.csv`), and solves one 48 h window three ways: no
+battery, wear-blind battery and wear-aware battery. Day-after prices are not
+auctioned yet, so the second day repeats tomorrow's prices and is labelled as
+such; it only decides where the battery ends the day. The plan for tomorrow,
+a running `summary.csv` and a readable `latest.md` go to `data/plans/` on the
+`data-feed` branch; yesterday's end-of-day storage levels are today's start.
+
+```bash
+python -m engine.data.feed                         # newest prices and weather
+python scenarios/run_daily_plan.py                 # tomorrow
+python scenarios/run_daily_plan.py --date 2026-10-27 --capex 300
+python scenarios/export_site_profiles.py           # only when the site changes
+```
+
 ## Scope
 
 HEXOS is an offline optimization and control-strategy engine — it works out and

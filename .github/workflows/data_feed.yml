@@ -1,8 +1,10 @@
 # Daily open-data refresh for HEXOS.
 #
 # Pulls the newest DE-LU day-ahead prices (Energy-Charts, cross-checked against
-# SMARD) and Munich weather (Open-Meteo) into data/feed/, and commits the CSVs
-# to the `data-feed` branch, so main's history stays code-only.
+# SMARD) and Munich weather (Open-Meteo) into data/feed/, makes tomorrow's plan
+# for the demo site with battery wear priced in (data/plans/, see
+# scenarios/run_daily_plan.py), and commits both to the `data-feed` branch, so
+# main's history stays code-only.
 #
 # 13:30 UTC is after the day-ahead auction results (published ~12:45 CET), so
 # tomorrow's prices are in the run. Run it by hand from the Actions tab too.
@@ -38,14 +40,16 @@ jobs:
           python-version: "3.11"
 
       - name: Install
-        # importing engine.data.feed loads the engine package, which needs pyomo
-        run: pip install pandas pyomo
+        # importing engine.data.feed loads the engine package, which needs pyomo;
+        # the plan also needs the HiGHS solver
+        run: pip install pandas pyomo highspy
 
       - name: Restore the stored feed from the data-feed branch
         run: |
           if git ls-remote --exit-code --heads origin data-feed; then
             git fetch origin data-feed
             git checkout origin/data-feed -- data/feed || true
+            git checkout origin/data-feed -- data/plans || true
           fi
 
       - name: Refresh
@@ -58,11 +62,19 @@ jobs:
             python -m engine.data.feed
           fi
 
+      - name: Plan tomorrow
+        # a missing price day must not stop the data from being saved
+        continue-on-error: true
+        env:
+          PYTHONPATH: src
+        run: python scenarios/run_daily_plan.py
+
       - name: Commit to data-feed
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mkdir -p /tmp/feed && cp -r data/feed/. /tmp/feed/
+          mkdir -p /tmp/feed /tmp/plans && cp -r data/feed/. /tmp/feed/
+          if [ -d data/plans ]; then cp -r data/plans/. /tmp/plans/; fi
           if git ls-remote --exit-code --heads origin data-feed; then
             git checkout -B data-feed origin/data-feed
           else
@@ -70,8 +82,8 @@ jobs:
             git rm -rf --cached . > /dev/null
             find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           fi
-          mkdir -p data/feed && cp -r /tmp/feed/. data/feed/
-          git add -f data/feed
+          mkdir -p data/feed data/plans && cp -r /tmp/feed/. data/feed/ && cp -r /tmp/plans/. data/plans/
+          git add -f data/feed data/plans
           if git diff --cached --quiet; then
             echo "::notice::No new data."
             exit 0

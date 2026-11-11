@@ -15,6 +15,7 @@ data/year_*.csv
 
 # The daily data feed lives on its own `data-feed` branch, not on code branches
 data/feed/
+data/plans/
 
 # Solver / editor noise
 *.log
