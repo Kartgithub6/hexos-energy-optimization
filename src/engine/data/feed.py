@@ -43,7 +43,7 @@ import pandas as pd
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 STORE = os.path.join(ROOT, "data", "feed")
-EC_URL = "https://api.energy-charts.info/price"
+EC_URL = "https://api.energy-charts.info/v2/price"
 SMARD_URL = "https://www.smard.de/app/chart_data"
 SMARD_PRICE_FILTER = 4169
 OM_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
@@ -60,15 +60,31 @@ def _get_json(url, timeout=60):
 
 # ------------------------------------------------------------- Energy-Charts
 def parse_energy_charts(payload) -> pd.Series:
-    if "unix_seconds" not in payload or "price" not in payload:
-        raise ValueError(f"unexpected Energy-Charts payload, keys {list(payload)}")
+    """Energy-Charts price payload -> EUR/MWh series on a UTC index.
+
+    Reads the v2 schema (schema_version 2.0: `series` + `data`, timestamps in
+    local time with an offset) that replaced the flat unix_seconds/price
+    payload in November 2026, and still reads the old one.
+    """
     unit = str(payload.get("unit", "EUR / MWh"))
     if "MWh" not in unit:
         raise ValueError(f"unexpected Energy-Charts unit {unit!r}")
-    idx = pd.to_datetime(payload["unix_seconds"], unit="s", utc=True)
-    s = pd.Series(payload["price"], index=idx, name="price_eur_mwh", dtype="float64")
-    return s[~s.index.duplicated()].dropna().sort_index()
 
+    if "unix_seconds" in payload and "price" in payload:          # legacy schema
+        idx = pd.to_datetime(payload["unix_seconds"], unit="s", utc=True)
+        vals = payload["price"]
+    elif isinstance(payload.get("data"), list):                   # v2 schema
+        series = payload.get("series") or [{"id": "day_ahead_price"}]
+        key = series[0].get("id", "day_ahead_price")
+        rows = [(r.get("timestamp"), (r.get("values") or {}).get(key))
+                for r in payload["data"]]
+        idx = pd.to_datetime([t for t, _ in rows], utc=True, format="ISO8601")
+        vals = [v for _, v in rows]
+    else:
+        raise ValueError(f"unexpected Energy-Charts payload, keys {list(payload)}")
+
+    s = pd.Series(vals, index=idx, name="price_eur_mwh", dtype="float64")
+    return s[~s.index.duplicated()].dropna().sort_index()
 
 def fetch_energy_charts(start: date, end: date, bzn="DE-LU") -> pd.Series:
     q = urllib.parse.urlencode({"bzn": bzn, "start": start.isoformat(), "end": end.isoformat()})
@@ -110,7 +126,7 @@ def fetch_smard(start: date, end: date, region="DE-LU", resolution="quarterhour"
              (s.index < pd.Timestamp(t1, unit="ms", tz="UTC"))]
 
 
-# ---------------------------------------------------------------- Open-Meteo
+# Open-Meteo
 OM_VARS = ("temperature_2m", "shortwave_radiation")
 
 
@@ -199,9 +215,15 @@ def update(since: date | None = None, until: date | None = None, verbose=True) -
         since = (prices.index.max().date() - timedelta(days=2)) if prices is not None \
             else date(date.today().year, 1, 1)
     until = until or (date.today() + timedelta(days=1))   # tomorrow clears ~12:45 CET
-
-    ec_raw = fetch_energy_charts(since, until)
+    try:
+        ec_raw = fetch_energy_charts(since, until)
+    except Exception as e:                      # source changed or unreachable
+        print(f"  ! Energy-Charts unavailable ({e}); continuing on SMARD alone")
+        ec_raw = pd.Series(dtype="float64", name="price_eur_mwh", index=pd.DatetimeIndex([], tz="UTC"))
     sm_raw = fetch_smard(since, until)
+    if ec_raw.empty and sm_raw.empty:
+        raise RuntimeError("both price sources failed")
+        
     new = pd.DataFrame({"energy_charts": to_hourly(ec_raw), "smard": to_hourly(sm_raw)})
     new["price_eur_mwh"] = new["energy_charts"].fillna(new["smard"])
     prices = merge(prices, new)
